@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Corps de l'appareil photo -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M74,38H66.83L63,34H45L41.17,38H34a4,4 0,0 0,-4 4V70a4,4 0,0 0,4 4H74a4,4 0,0 0,4 -4V42A4,4 0,0 0,74 38ZM54,67a11,11 0,1 1,11 -11A11,11 0,0 1,54 67Z" />
+    <!-- Objectif -->
+    <path
+        android:fillColor="#1A237E"
+        android:pathData="M54,49a7,7 0,1 0,7 7A7,7 0,0 0,54 49Z" />
+</vector>
+
