@@ -2,10 +2,18 @@ package ovh.pandore.photobooth.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Palette "Studio Photo" — bleu ardoise, neutre et élégant
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Dark theme (fond sombre, accents clairs)
+val SlateBlue80    = Color(0xFFADC8FF)   // primary — bleu doux
+val SlateGrey80    = Color(0xFFBCC7DC)   // secondary — gris-bleu
+val SlateAccent80  = Color(0xFFDCBBFF)   // tertiary — lavande
+
+// Light theme (fond clair, accents foncés)
+val SlateBlue40    = Color(0xFF1B5299)   // primary — bleu profond
+val SlateGrey40    = Color(0xFF4B5E7A)   // secondary — ardoise
+val SlateAccent40  = Color(0xFF6B4FA7)   // tertiary — violet
+
+// Surfaces
+val SurfaceDark    = Color(0xFF191C20)   // fond principal mode sombre
+val SurfaceLight   = Color(0xFFF6F8FF)   // fond principal mode clair

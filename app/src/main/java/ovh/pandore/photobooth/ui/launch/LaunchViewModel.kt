@@ -64,6 +64,8 @@ class LaunchViewModel(application: Application) : AndroidViewModel(application) 
 
             if (canConnect) {
                 prefs.saveWebcamBaseUrl(url)
+                // Configure l'autofocus avant de démarrer le flux
+                service.setupCamera()
                 onSuccess()
             } else {
                 _uiState.update {

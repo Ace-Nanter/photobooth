@@ -23,7 +23,9 @@ data class SettingsUiState(
     val isLoadingAlbums: Boolean = false,
     val albumsError: String? = null,
     val saveSuccess: Boolean = false,
-    val saveError: String? = null
+    val saveError: String? = null,
+    /** Durée d'affichage de la vignette photo après capture, en secondes (2-15). */
+    val photoPreviewDuration: Int = PreferencesManager.DEFAULT_PREVIEW_DURATION_SECONDS
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -43,7 +45,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 it.copy(
                     immichBaseUrl = prefs.getImmichBaseUrl(),
                     immichApiKey = prefs.getImmichApiKey(),
-                    immichAlbumId = prefs.getImmichAlbumId()
+                    immichAlbumId = prefs.getImmichAlbumId(),
+                    photoPreviewDuration = prefs.getPhotoPreviewDuration()
                 )
             }
         }
@@ -128,5 +131,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun dismissSaveSuccess() = _uiState.update { it.copy(saveSuccess = false) }
     fun dismissSaveError() = _uiState.update { it.copy(saveError = null) }
+
+    /** Met à jour et sauvegarde immédiatement la durée de la vignette (slider). */
+    fun onPhotoPreviewDurationChange(seconds: Int) {
+        _uiState.update { it.copy(photoPreviewDuration = seconds) }
+        viewModelScope.launch { prefs.savePhotoPreviewDuration(seconds) }
+    }
 }
 

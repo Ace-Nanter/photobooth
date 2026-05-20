@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -29,6 +32,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -38,12 +42,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ovh.pandore.photobooth.domain.model.ImmichAlbum
@@ -56,6 +64,8 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    // État local d'affichage de la clé API
+    var apiKeyVisible by remember { mutableStateOf(false) }
     LaunchedEffect(uiState.saveSuccess) {
         if (uiState.saveSuccess) {
             snackbarHostState.showSnackbar("Réglages sauvegardés")
@@ -98,14 +108,34 @@ fun SettingsScreen(
                 label = { Text("URL du serveur Immich") },
                 placeholder = { Text("https://photos.example.com") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    autoCorrectEnabled = false
+                )
             )
             OutlinedTextField(
                 value = uiState.immichApiKey,
                 onValueChange = viewModel::onImmichApiKeyChange,
                 label = { Text("Clé API Immich") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (apiKeyVisible) VisualTransformation.None
+                                       else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    autoCorrectEnabled = false
+                ),
+                trailingIcon = {
+                    IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                        Icon(
+                            imageVector = if (apiKeyVisible) Icons.Filled.VisibilityOff
+                                          else Icons.Filled.Visibility,
+                            contentDescription = if (apiKeyVisible) "Masquer la clé API"
+                                                 else "Afficher la clé API"
+                        )
+                    }
+                }
             )
             Button(onClick = viewModel::saveImmichConfig, modifier = Modifier.fillMaxWidth()) {
                 Text("Sauvegarder la configuration Immich")
@@ -137,6 +167,12 @@ fun SettingsScreen(
                 )
             }
             HorizontalDivider()
+            SectionTitle("Affichage photo")
+            PhotoPreviewDurationSlider(
+                durationSeconds = uiState.photoPreviewDuration,
+                onDurationChange = viewModel::onPhotoPreviewDurationChange
+            )
+            HorizontalDivider()
             SectionTitle("Code PIN")
             Text(
                 text = "Laissez vide pour conserver le code actuel.",
@@ -149,7 +185,11 @@ fun SettingsScreen(
                 label = { Text("Nouveau code PIN") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    autoCorrectEnabled = false
+                )
             )
             OutlinedTextField(
                 value = uiState.confirmPinCode,
@@ -157,7 +197,11 @@ fun SettingsScreen(
                 label = { Text("Confirmer le code PIN") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    autoCorrectEnabled = false
+                )
             )
             Button(
                 onClick = viewModel::savePinCode,
@@ -184,6 +228,47 @@ fun SettingsScreen(
         }
     }
 }
+@Composable
+private fun PhotoPreviewDurationSlider(
+    durationSeconds: Int,
+    onDurationChange: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Durée d'affichage de la vignette",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "${durationSeconds}s",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = durationSeconds.toFloat(),
+            onValueChange = { onDurationChange(it.toInt()) },
+            valueRange = 2f..15f,
+            steps = 12,   // 2,3,4,...,15 → 13 valeurs → 12 pas
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("2s", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("15s", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 private fun SectionTitle(title: String) {
     Text(

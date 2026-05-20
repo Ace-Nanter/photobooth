@@ -35,7 +35,7 @@ Un process background les envoie vers une instance Immich, dans un album dédié
   * **Screen Pinning Android** activé automatiquement à l'arrivée sur cette page (l'utilisateur confirme une seule fois ; home, recents et back sont ensuite tous bloqués).
   * Le mode kiosque est **désactivé** dès que l'application revient à la page de lancement (reprise, icônisation, etc.) : la navigation système redevient normale sur la page de lancement.
 * Affichage d'un QR code en permanence avec le lien de l'album Immich configuré.
-* **Bouton de prise de vue** (centré en bas) → appel `GET /photoaf.jpg` en background ; la photo est sauvegardée dans `Pictures/Photobooth` puis mise en file d'upload. Après la capture, une **vignette animée** de la photo s'affiche :
+* **Bouton de prise de vue** (centré en bas) → au clic, un **son de déclencheur** (`res/raw/photo.mp3`) est joué instantanément via `SoundPool`, puis l'appel `GET /photoaf.jpg` est exécuté en background ; la photo est sauvegardée dans `Pictures/Photobooth` puis mise en file d'upload. Après la capture, une **vignette animée** de la photo s'affiche :
   * Apparition depuis le centre en zoom-in avec animation spring (rebond léger, `DampingRatioMediumBouncy`), accompagnée d'un fondu du fond assombri.
   * La photo occupe environ **70 % de la largeur de l'écran**, avec un ratio d'aspect réel, une **bordure blanche de 6 dp** et des coins arrondis.
   * La vignette reste affichée pendant la durée configurée dans les réglages (défaut 5 s), puis disparaît en zoom-out + fondu.

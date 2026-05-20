@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -21,8 +22,10 @@ class PreferencesManager(private val context: Context) {
         private val IMMICH_ALBUM_ID = stringPreferencesKey("immich_album_id")
         private val IMMICH_ALBUM_LINK = stringPreferencesKey("immich_album_link")
         private val PIN_CODE = stringPreferencesKey("pin_code")
+        private val PHOTO_PREVIEW_DURATION = intPreferencesKey("photo_preview_duration_seconds")
 
         const val DEFAULT_PIN = "1234"
+        const val DEFAULT_PREVIEW_DURATION_SECONDS = 5
     }
 
     // --- Flows ---
@@ -45,6 +48,9 @@ class PreferencesManager(private val context: Context) {
     val pinCodeFlow: Flow<String> = context.dataStore.data
         .map { it[PIN_CODE] ?: DEFAULT_PIN }
 
+    val photoPreviewDurationFlow: Flow<Int> = context.dataStore.data
+        .map { it[PHOTO_PREVIEW_DURATION] ?: DEFAULT_PREVIEW_DURATION_SECONDS }
+
     // --- Lectures suspendues (one-shot) ---
 
     suspend fun getWebcamBaseUrl(): String = webcamBaseUrlFlow.first()
@@ -53,6 +59,7 @@ class PreferencesManager(private val context: Context) {
     suspend fun getImmichAlbumId(): String = immichAlbumIdFlow.first()
     suspend fun getImmichAlbumLink(): String = immichAlbumLinkFlow.first()
     suspend fun getPinCode(): String = pinCodeFlow.first()
+    suspend fun getPhotoPreviewDuration(): Int = photoPreviewDurationFlow.first()
     suspend fun hasValidWebcamConfig(): Boolean = getWebcamBaseUrl().isNotBlank()
 
     // --- Écritures ---
@@ -74,5 +81,8 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun savePinCode(pin: String) =
         context.dataStore.edit { it[PIN_CODE] = pin }
+
+    suspend fun savePhotoPreviewDuration(seconds: Int) =
+        context.dataStore.edit { it[PHOTO_PREVIEW_DURATION] = seconds.coerceIn(2, 15) }
 }
 

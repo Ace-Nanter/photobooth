@@ -8,10 +8,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import ovh.pandore.photobooth.domain.model.ImmichAlbum
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -52,18 +50,23 @@ class ImmichService(
     }
 
     /**
-     * Upload un fichier photo vers Immich.
+     * Upload les bytes d'une photo vers Immich.
+     * @param fileRef  chemin ou content URI utilisé pour dériver le nom de fichier.
+     * @param bytes    contenu JPEG brut de la photo.
      * @return l'ID de l'asset créé, ou null en cas d'échec.
      */
-    suspend fun uploadAsset(file: File): String? = withContext(Dispatchers.IO) {
+    suspend fun uploadAsset(fileRef: String, bytes: ByteArray): String? = withContext(Dispatchers.IO) {
         try {
-            val now = isoFormat.format(Date(file.lastModified()))
-            val fileBody = file.asRequestBody("image/jpeg".toMediaType())
+            val now = isoFormat.format(Date())
+            // Dérive un nom de fichier lisible depuis la référence
+            val fileName = fileRef.substringAfterLast('/').substringAfterLast(':')
+                .ifBlank { "photo_${System.currentTimeMillis()}.jpg" }
+            val fileBody = bytes.toRequestBody("image/jpeg".toMediaType())
 
             val multipartBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
-                .addFormDataPart("assetData", file.name, fileBody)
-                .addFormDataPart("deviceAssetId", file.name)
+                .addFormDataPart("assetData", fileName, fileBody)
+                .addFormDataPart("deviceAssetId", fileName)
                 .addFormDataPart("deviceId", "photobooth-android")
                 .addFormDataPart("fileCreatedAt", now)
                 .addFormDataPart("fileModifiedAt", now)
