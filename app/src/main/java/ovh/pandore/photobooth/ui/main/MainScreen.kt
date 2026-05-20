@@ -72,6 +72,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import ovh.pandore.photobooth.R
 import kotlinx.coroutines.delay
 import ovh.pandore.photobooth.ui.components.MjpegStreamView
 import ovh.pandore.photobooth.ui.components.QrCodeImage
