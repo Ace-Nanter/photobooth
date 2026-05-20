@@ -69,4 +69,4 @@ Un process background les envoie vers une instance Immich, dans un album dédié
 * **Slider "Durée d'affichage de la vignette"** : plage 2-15 secondes (défaut 5 s). La valeur est sauvegardée immédiatement au relâchement du slider.
 * Choix de l'album Immich : récupération de la liste via appel API, puis sauvegarde de l'ID choisi.
 * Une fois l'album choisi, le lien de l'album est construit (`{immichUrl}/albums/{albumId}`) et stocké pour être affiché via le QR code.
-* Bouton pour quitter l'application (désactive le screen pinning puis ferme l'app).
+* Bouton pour quitter l'application : icône `ExitToApp` (rouge) placée dans la `TopAppBar` en haut à droite, accessible immédiatement sans scroller. Au clic : désactive le screen pinning (`stopLockTask`) puis ferme l'app (`finishAndRemoveTask`).

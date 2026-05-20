@@ -86,6 +86,20 @@ fun SettingsScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            (context as? Activity)?.stopLockTask()
+                            (context as? Activity)?.finishAndRemoveTask()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                            contentDescription = "Quitter l'application",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             )
         },
@@ -210,20 +224,7 @@ fun SettingsScreen(
             ) {
                 Text("Changer le code PIN")
             }
-            HorizontalDivider()
-            Button(
-                onClick = {
-                    // Désactive le screen pinning avant de quitter
-                    (context as? Activity)?.stopLockTask()
-                    (context as? Activity)?.finishAndRemoveTask()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Quitter l'application")
-            }
+
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
