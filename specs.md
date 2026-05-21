@@ -39,9 +39,11 @@ Un process background les envoie vers une instance Immich, dans un album dédié
 * **Bouton de prise de vue** (centré en bas) → au clic, un **son de déclencheur** (`res/raw/photo.mp3`) est joué instantanément via `SoundPool`, puis l'appel `GET /photoaf.jpg` est exécuté en background ; la photo est sauvegardée dans `Pictures/Photobooth` puis mise en file d'upload. Après la capture, une **vignette animée** de la photo s'affiche :
   * Apparition depuis le centre en zoom-in avec animation spring (rebond léger, `DampingRatioMediumBouncy`), accompagnée d'un fondu du fond assombri.
   * La photo occupe environ **70 % de la largeur de l'écran**, avec un ratio d'aspect réel, une **bordure blanche de 6 dp** et des coins arrondis.
-  * La vignette reste affichée pendant la durée configurée dans les réglages (défaut 5 s), puis disparaît en zoom-out + fondu.
+  * La vignette reste affichée pendant la durée configurée dans les réglages (défaut 5 s), puis disparaît en zoom-out + fondu. La durée est observée en temps réel depuis le DataStore via un Flow : toute modification dans les réglages est immédiatement prise en compte sans nécessiter un redémarrage ou un retour de navigation.
   * Aucune popup / snackbar n'est affichée en plus de cette vignette.
+  * **Pendant l'affichage de la vignette**, les boutons de prise de vue et de flash sont désactivés.
 * **Bouton Flash** (à gauche du bouton de prise de vue) → bascule sur/hors du flash (torche) via `POST /enabletorch` / `POST /disabletorch`. L'icône indique l'état actuel (éclair jaune = actif, grisé = inactif).
+* **Désactivation des boutons d'action** : les boutons de prise de vue et de flash sont désactivés (`enabled = false`) dans les cas suivants : vignette d'aperçu visible, dialog PIN réglages affichée, dialog PIN de sortie affichée.
 * Bouton "roue crantée" **en haut à gauche** pour accéder aux réglages. L'appui sur ce bouton demande un code PIN.
 * Si le code est correct alors la navigation se fait vers la page des réglages.
 * **Positionnement du bouton réglages** : utilise `BoxWithConstraints` pour calculer dynamiquement la bande letterbox entre la vidéo 720p (16:9) et les bords de l'écran. Sur la tablette cible SM-T590 (résolution 1920×1200, ~213 DPI, soit ~1443×902 dp en paysage), la vidéo 16:9 laisse une bande letterbox d'environ 45 dp en haut et en bas. Le bouton réglages est centré verticalement dans cette bande, hors de la zone vidéo.

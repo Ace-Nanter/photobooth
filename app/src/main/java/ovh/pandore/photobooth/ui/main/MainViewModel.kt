@@ -58,19 +58,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         loadConfig()
+        observePreviewDuration()
     }
 
     private fun loadConfig() {
         viewModelScope.launch {
             val webcamBase = prefs.getWebcamBaseUrl()
             val albumLink = prefs.getImmichAlbumLink()
-            val previewDurationMs = prefs.getPhotoPreviewDuration() * 1_000L
             _uiState.update {
                 it.copy(
                     streamUrl = IpWebCamService(webcamBase).getVideoStreamUrl(),
-                    albumLink = albumLink,
-                    photoPreviewDurationMs = previewDurationMs
+                    albumLink = albumLink
                 )
+            }
+        }
+    }
+
+    /**
+     * Observe en continu la durée de vignette depuis le DataStore.
+     * Toute modification dans les réglages est immédiatement reflétée dans le state.
+     */
+    private fun observePreviewDuration() {
+        viewModelScope.launch {
+            prefs.photoPreviewDurationFlow.collect { seconds ->
+                _uiState.update { it.copy(photoPreviewDurationMs = seconds * 1_000L) }
             }
         }
     }
@@ -79,8 +90,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshAlbumLink() {
         viewModelScope.launch {
             val albumLink = prefs.getImmichAlbumLink()
-            val previewDurationMs = prefs.getPhotoPreviewDuration() * 1_000L
-            _uiState.update { it.copy(albumLink = albumLink, photoPreviewDurationMs = previewDurationMs) }
+            _uiState.update { it.copy(albumLink = albumLink) }
         }
     }
 

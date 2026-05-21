@@ -1,5 +1,6 @@
 package ovh.pandore.photobooth.ui.main
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
@@ -81,6 +82,7 @@ import kotlinx.coroutines.delay
 import ovh.pandore.photobooth.ui.components.MjpegStreamView
 import ovh.pandore.photobooth.ui.components.QrCodeImage
 
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 fun MainScreen(
     onNavigateToSettings: () -> Unit,
@@ -193,6 +195,10 @@ fun MainScreen(
         }
 
         // Bouton de capture centré en bas + bouton Flash à sa gauche
+        // Les boutons sont désactivés pendant l'affichage de la vignette ou lors de la saisie d'un PIN
+        val buttonsDisabled = uiState.capturedPhotoBytes != null
+                || uiState.showPinDialog
+                || uiState.showExitPinDialog
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -202,6 +208,7 @@ fun MainScreen(
             // Bouton Flash
             FilledIconButton(
                 onClick = { viewModel.toggleFlash() },
+                enabled = !buttonsDisabled,
                 modifier = Modifier.size(56.dp),
                 shape = CircleShape,
                 colors = IconButtonDefaults.filledIconButtonColors(
@@ -229,6 +236,7 @@ fun MainScreen(
                         viewModel.capturePhoto()
                     }
                 },
+                enabled = !buttonsDisabled,
                 modifier = Modifier.size(80.dp),
                 shape = CircleShape,
                 colors = IconButtonDefaults.filledIconButtonColors(
