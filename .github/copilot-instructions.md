@@ -7,4 +7,5 @@ Chaque fois que tu modifies, ajoutes ou supprimes une fonctionnalité, du code m
 
 ## 2. Règle Critique : Commits
 Si les modifications que tu viens de faire le justifient, fais un commit Git.
+**Les messages de commits doivent être rédigés en anglais.**
 ---
