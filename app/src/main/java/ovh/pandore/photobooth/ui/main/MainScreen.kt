@@ -4,6 +4,7 @@ import android.app.Activity
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.SoundPool
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -18,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -70,8 +72,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import ovh.pandore.photobooth.MainActivity
 import ovh.pandore.photobooth.R
 import kotlinx.coroutines.delay
 import ovh.pandore.photobooth.ui.components.MjpegStreamView
@@ -85,6 +89,12 @@ fun MainScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val activity = context as? MainActivity
+
+    // Interception du bouton retour en mode kiosque : demande le PIN de sortie
+    BackHandler(enabled = true) {
+        viewModel.showExitPinDialog()
+    }
 
     // SoundPool pour le son de déclencheur
     val soundPool = remember {
@@ -141,7 +151,24 @@ fun MainScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // BoxWithConstraints permet de calculer dynamiquement la hauteur du letterbox
+    // entre la vidéo 720p (16:9) et les bords de l'écran (16:10 sur SM-T590).
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // Aspect ratio de l'écran et du flux vidéo 720p
+        val screenAspect = maxWidth.value / maxHeight.value
+        val videoAspect = 16f / 9f
+
+        // Bande letterbox en haut/bas lorsque l'écran est plus « carré » que 16:9.
+        // Sur SM-T590 (1443×902 dp ≈ 16:10) : letterboxTop ≈ 45 dp.
+        val letterboxTopDp: Dp = if (screenAspect < videoAspect) {
+            ((maxHeight - maxWidth / videoAspect) / 2).coerceAtLeast(0.dp)
+        } else {
+            0.dp
+        }
+
+        // Décalage vertical pour centrer le bouton dans la bande letterbox
+        val settingsBtnTopPadding: Dp = ((letterboxTopDp - 48.dp) / 2).coerceAtLeast(4.dp)
+
         // Flux vidéo MJPEG plein écran
         if (uiState.streamUrl.isNotBlank()) {
             MjpegStreamView(
@@ -165,7 +192,7 @@ fun MainScreen(
             )
         }
 
-        // Bouton de capture centré en bas + bouton Flash à sa droite
+        // Bouton de capture centré en bas + bouton Flash à sa gauche
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -221,12 +248,12 @@ fun MainScreen(
             }
         }
 
-        // Bouton réglages en haut à gauche
+        // Bouton réglages — positionné dans l'interstice letterbox en haut à gauche
         IconButton(
             onClick = viewModel::showPinDialog,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(8.dp)
+                .padding(start = 8.dp, top = settingsBtnTopPadding)
         ) {
             Icon(
                 imageVector = Icons.Filled.Settings,
@@ -273,12 +300,26 @@ fun MainScreen(
         ) { data -> Snackbar(snackbarData = data) }
     }
 
-    // Dialog de saisie du code PIN
+    // Dialog PIN pour accéder aux réglages
     if (uiState.showPinDialog) {
         PinDialog(
             hasError = uiState.pinError,
             onConfirm = { pin -> viewModel.checkPin(pin, onCorrect = onNavigateToSettings) },
             onDismiss = viewModel::dismissPinDialog
+        )
+    }
+
+    // Dialog PIN pour quitter l'application via le bouton retour
+    if (uiState.showExitPinDialog) {
+        ExitPinDialog(
+            hasError = uiState.exitPinError,
+            onConfirm = { pin ->
+                viewModel.checkExitPin(pin) {
+                    activity?.exitKioskMode()
+                    activity?.finishAndRemoveTask()
+                }
+            },
+            onDismiss = viewModel::dismissExitPinDialog
         )
     }
 }
@@ -463,3 +504,46 @@ private fun PinDialog(
         }
     )
 }
+
+/**
+ * Dialog de confirmation PIN avant de quitter l'application.
+ * Affiché lorsque l'utilisateur appuie sur le bouton retour système depuis l'écran principal.
+ */
+@Composable
+private fun ExitPinDialog(
+    hasError: Boolean,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var pinValue by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Quitter l'application") },
+        text = {
+            Column {
+                Text("Entrez le code PIN pour déverrouiller et quitter l'application.")
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = pinValue,
+                    onValueChange = { pinValue = it },
+                    label = { Text("Code PIN") },
+                    singleLine = true,
+                    isError = hasError,
+                    supportingText = if (hasError) {
+                        { Text("Code incorrect", color = MaterialTheme.colorScheme.error) }
+                    } else null,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(pinValue) }) { Text("Valider") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
+}
+

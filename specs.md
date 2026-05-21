@@ -3,6 +3,7 @@
 # Spécifications principales
 
 L'application à développer est une application qui tournera sur une tablette Samsung SM590 avec 3go de RAM et un processeur **Qualcomm Snapdragon 450**.
+L'application s'affiche sous le nom **"Photobooth"** dans le tiroir d'applications Android (`app_name` = `Photobooth` dans `strings.xml`).
 L'application consiste à mettre à disposition un "photobooth", c'est-à-dire laisser à des personnes durant un évènement la possibilité de se prendre en photo avec leurs proches.
 Pour cela le setup sera basé sur une caméra IP (téléphone portable avec l'application IP WebCam installée et lancée, qui expose un flux MJPEG), qui donne accès à un flux vidéo ainsi qu'à une API pour prendre des photos.
 Les photos prises sont sauvegardées dans le dossier public **`Pictures/Photobooth`** de l'appareil. L'application maintient une liste interne des photos en attente d'upload via la file WorkManager (tag `pending_photo_upload`).
@@ -31,8 +32,8 @@ Un process background les envoie vers une instance Immich, dans un album dédié
   * **`CoroutineScope(Dispatchers.IO + SupervisorJob())`** : un seul `scope.cancel()` en `onDispose` arrête proprement les deux coroutines (decode + UI collector).
 * Verrouillage des fonctions de navigation système **actif uniquement sur cette page et les pages suivantes (réglages)** :
   * Mode immersif permanent (barre de navigation et barre de statut masquées).
-  * Bouton retour physique désactivé.
-  * **Screen Pinning Android** activé automatiquement à l'arrivée sur cette page (l'utilisateur confirme une seule fois ; home, recents et back sont ensuite tous bloqués).
+  * **Bouton retour physique protégé par PIN** : appuyer sur retour depuis l'écran principal affiche une dialog « Quitter l'application » demandant le code PIN. Si le code est correct : le mode kiosque est désactivé (`stopLockTask`) et l'application se ferme (`finishAndRemoveTask`). Si le code est incorrect, un message d'erreur s'affiche dans la dialog.
+  * **Screen Pinning Android** activé automatiquement à l'arrivée sur cette page (l'utilisateur confirme une seule fois ; home et recents sont ensuite bloqués).
   * Le mode kiosque est **désactivé** dès que l'application revient à la page de lancement (reprise, icônisation, etc.) : la navigation système redevient normale sur la page de lancement.
 * Affichage d'un QR code en permanence avec le lien de l'album Immich configuré.
 * **Bouton de prise de vue** (centré en bas) → au clic, un **son de déclencheur** (`res/raw/photo.mp3`) est joué instantanément via `SoundPool`, puis l'appel `GET /photoaf.jpg` est exécuté en background ; la photo est sauvegardée dans `Pictures/Photobooth` puis mise en file d'upload. Après la capture, une **vignette animée** de la photo s'affiche :
@@ -43,6 +44,7 @@ Un process background les envoie vers une instance Immich, dans un album dédié
 * **Bouton Flash** (à gauche du bouton de prise de vue) → bascule sur/hors du flash (torche) via `POST /enabletorch` / `POST /disabletorch`. L'icône indique l'état actuel (éclair jaune = actif, grisé = inactif).
 * Bouton "roue crantée" **en haut à gauche** pour accéder aux réglages. L'appui sur ce bouton demande un code PIN.
 * Si le code est correct alors la navigation se fait vers la page des réglages.
+* **Positionnement du bouton réglages** : utilise `BoxWithConstraints` pour calculer dynamiquement la bande letterbox entre la vidéo 720p (16:9) et les bords de l'écran. Sur la tablette cible SM-T590 (résolution 1920×1200, ~213 DPI, soit ~1443×902 dp en paysage), la vidéo 16:9 laisse une bande letterbox d'environ 45 dp en haut et en bas. Le bouton réglages est centré verticalement dans cette bande, hors de la zone vidéo.
 * **Surveillance du flux vidéo** : si le flux est perdu, un indicateur d'avertissement (⚠️ orange) apparaît en haut à droite. Un appui sur cet indicateur déclenche une tentative de reconnexion immédiate.
 
 ## Processus en background

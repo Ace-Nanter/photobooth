@@ -35,6 +35,9 @@ data class MainUiState(
     val capturedPhotoBytes: ByteArray? = null,
     val showPinDialog: Boolean = false,
     val pinError: Boolean = false,
+    /** true = affiche la dialog de PIN pour quitter l'application via le bouton retour */
+    val showExitPinDialog: Boolean = false,
+    val exitPinError: Boolean = false,
     val error: String? = null,
     /** true = flux vidéo actif, false = flux perdu (affiche le warning). */
     val streamConnected: Boolean = false,
@@ -156,6 +159,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 onCorrect()
             } else {
                 _uiState.update { it.copy(pinError = true) }
+            }
+        }
+    }
+
+    // --- PIN de sortie (bouton retour en mode kiosque) ---
+
+    /** Affiche la dialog de PIN pour quitter l'application via le bouton retour. */
+    fun showExitPinDialog() {
+        _uiState.update { it.copy(showExitPinDialog = true, exitPinError = false) }
+    }
+
+    fun dismissExitPinDialog() {
+        _uiState.update { it.copy(showExitPinDialog = false, exitPinError = false) }
+    }
+
+    /** Vérifie le PIN de sortie ; appelle [onCorrect] si le code est juste. */
+    fun checkExitPin(enteredPin: String, onCorrect: () -> Unit) {
+        viewModelScope.launch {
+            val savedPin = prefs.getPinCode()
+            if (savedPin == enteredPin) {
+                _uiState.update { it.copy(showExitPinDialog = false, exitPinError = false) }
+                onCorrect()
+            } else {
+                _uiState.update { it.copy(exitPinError = true) }
             }
         }
     }
