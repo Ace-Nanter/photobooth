@@ -1,7 +1,9 @@
 package ovh.pandore.photobooth.ui.main
 
 import android.app.Application
+import android.content.ContentUris
 import android.content.ContentValues
+import android.net.Uri
 import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ovh.pandore.photobooth.data.local.PhotoRecord
+import ovh.pandore.photobooth.data.local.PhotoRepository
 import ovh.pandore.photobooth.data.local.PreferencesManager
 import ovh.pandore.photobooth.data.remote.IpWebCamService
 import ovh.pandore.photobooth.worker.PhotoUploadWorker
@@ -28,30 +32,24 @@ data class MainUiState(
     val streamUrl: String = "",
     val albumLink: String = "",
     val isCapturing: Boolean = false,
-    /**
-     * Bytes JPEG de la dernière photo prise — non null déclenche l'affichage de la vignette.
-     * Redevient null après fermeture de la vignette.
-     */
     val capturedPhotoBytes: ByteArray? = null,
     val showPinDialog: Boolean = false,
     val pinError: Boolean = false,
-    /** true = affiche la dialog de PIN pour quitter l'application via le bouton retour */
     val showExitPinDialog: Boolean = false,
     val exitPinError: Boolean = false,
     val error: String? = null,
-    /** true = flux vidéo actif, false = flux perdu (affiche le warning). */
     val streamConnected: Boolean = false,
-    /** Incrémenter déclenche une reconnexion dans MjpegStreamView. */
     val reconnectKey: Int = 0,
-    /** true = flash (torche) activé */
     val flashEnabled: Boolean = false,
-    /** Durée d'affichage de la vignette en millisecondes (depuis les préférences). */
-    val photoPreviewDurationMs: Long = 5_000L
+    val photoPreviewDurationMs: Long = 5_000L,
+    /** Liste des URIs de photos recentes pour le diaporama (haut-droite). */
+    val recentPhotoUris: List<Uri> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = PreferencesManager(application)
+    private val photoRepository = PhotoRepository.getInstance(application)
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -59,12 +57,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         loadConfig()
         observePreviewDuration()
+        loadRecentPhotos()
     }
 
     private fun loadConfig() {
         viewModelScope.launch {
             val webcamBase = prefs.getWebcamBaseUrl()
-            val albumLink = prefs.getImmichAlbumLink()
+            val albumLink  = prefs.getImmichAlbumLink()
             _uiState.update {
                 it.copy(
                     streamUrl = IpWebCamService(webcamBase).getVideoStreamUrl(),
@@ -74,10 +73,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Observe en continu la durée de vignette depuis le DataStore.
-     * Toute modification dans les réglages est immédiatement reflétée dans le state.
-     */
     private fun observePreviewDuration() {
         viewModelScope.launch {
             prefs.photoPreviewDurationFlow.collect { seconds ->
@@ -86,11 +81,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Recharge le lien d'album (après modification dans les réglages). */
     fun refreshAlbumLink() {
         viewModelScope.launch {
             val albumLink = prefs.getImmichAlbumLink()
             _uiState.update { it.copy(albumLink = albumLink) }
+        }
+    }
+
+    /** Charge (ou recharge) les URIs de photos pour le diaporama. */
+    fun loadRecentPhotos() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val uris = queryPhotosFromMediaStore()
+            _uiState.update { it.copy(recentPhotoUris = uris) }
         }
     }
 
@@ -101,17 +103,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isCapturing = true, error = null) }
 
             val webcamBase = prefs.getWebcamBaseUrl()
-            val service = IpWebCamService(webcamBase)
-            val bytes = service.capturePhoto()
+            val service    = IpWebCamService(webcamBase)
+            val bytes      = service.capturePhoto()
 
             if (bytes != null) {
                 val fileRef = savePhotoLocally(bytes)
+                // Enregistre la photo dans le depot local avant l'upload
+                photoRepository.addRecord(PhotoRecord(localUri = fileRef))
                 enqueueUpload(fileRef)
+                // Rafraichit le diaporama avec la nouvelle photo
+                loadRecentPhotos()
                 _uiState.update { it.copy(isCapturing = false, capturedPhotoBytes = bytes) }
             } else {
-                _uiState.update {
-                    it.copy(isCapturing = false, error = "Échec de la capture photo")
-                }
+                _uiState.update { it.copy(isCapturing = false, error = "Echec de la capture photo") }
             }
         }
     }
@@ -126,11 +130,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Flash ---
 
-    /** Active ou désactive le flash (torche) de la caméra IP. */
     fun toggleFlash() {
         viewModelScope.launch {
-            val webcamBase = prefs.getWebcamBaseUrl()
-            val service = IpWebCamService(webcamBase)
+            val webcamBase      = prefs.getWebcamBaseUrl()
+            val service         = IpWebCamService(webcamBase)
             val currentlyEnabled = _uiState.value.flashEnabled
             val success = if (currentlyEnabled) service.disableTorch() else service.enableTorch()
             if (success) {
@@ -139,14 +142,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Flux vidéo ---
+    // --- Flux video ---
 
-    /** Appelé par MjpegStreamView à chaque changement d'état du flux. */
     fun onStreamStatusChange(isConnected: Boolean) {
         _uiState.update { it.copy(streamConnected = isConnected) }
     }
 
-    /** Déclenche une tentative de reconnexion au flux MJPEG. */
     fun retryStream() {
         _uiState.update { it.copy(reconnectKey = it.reconnectKey + 1, streamConnected = false) }
     }
@@ -173,9 +174,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- PIN de sortie (bouton retour en mode kiosque) ---
-
-    /** Affiche la dialog de PIN pour quitter l'application via le bouton retour. */
     fun showExitPinDialog() {
         _uiState.update { it.copy(showExitPinDialog = true, exitPinError = false) }
     }
@@ -184,7 +182,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(showExitPinDialog = false, exitPinError = false) }
     }
 
-    /** Vérifie le PIN de sortie ; appelle [onCorrect] si le code est juste. */
     fun checkExitPin(enteredPin: String, onCorrect: () -> Unit) {
         viewModelScope.launch {
             val savedPin = prefs.getPinCode()
@@ -199,10 +196,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Helpers ---
 
-    /**
-     * Sauvegarde la photo dans Pictures/Photobooth via MediaStore (API 29+ garanti par minSdk).
-     * Retourne la content URI string pour le suivi et l'upload.
-     */
     private suspend fun savePhotoLocally(bytes: ByteArray): String = withContext(Dispatchers.IO) {
         val fileName = "photo_${System.currentTimeMillis()}.jpg"
         val resolver = getApplication<Application>().contentResolver
@@ -213,7 +206,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-            ?: throw IllegalStateException("Impossible de créer l'entrée MediaStore")
+            ?: throw IllegalStateException("Impossible de creer l'entree MediaStore")
         resolver.openOutputStream(uri)?.use { it.write(bytes) }
         resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         uri.toString()
@@ -232,5 +225,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .build()
         WorkManager.getInstance(getApplication()).enqueue(work)
     }
-}
 
+    /** Requete MediaStore pour les photos dans Pictures/Photobooth, triees par date DESC. */
+    private fun queryPhotosFromMediaStore(): List<Uri> {
+        val context  = getApplication<Application>()
+        val resolver = context.contentResolver
+        val projection = arrayOf(MediaStore.Images.Media._ID)
+        val selection  = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
+        val selArgs    = arrayOf("Pictures/Photobooth%")
+        val sortOrder  = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+
+        val list = mutableListOf<Uri>()
+        resolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            projection, selection, selArgs, sortOrder
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idCol)
+                list.add(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id))
+            }
+        }
+        return list.take(30)
+    }
+}

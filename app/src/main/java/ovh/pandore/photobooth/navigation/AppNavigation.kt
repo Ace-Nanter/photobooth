@@ -6,13 +6,15 @@ import androidx.compose.runtime.MutableState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import ovh.pandore.photobooth.ui.gallery.GalleryScreen
 import ovh.pandore.photobooth.ui.launch.LaunchScreen
 import ovh.pandore.photobooth.ui.main.MainScreen
 import ovh.pandore.photobooth.ui.settings.SettingsScreen
 
-private const val ROUTE_LAUNCH = "launch"
-private const val ROUTE_MAIN = "main"
+private const val ROUTE_LAUNCH   = "launch"
+private const val ROUTE_MAIN     = "main"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_GALLERY  = "gallery"
 
 @Composable
 fun AppNavigation(
@@ -23,7 +25,6 @@ fun AppNavigation(
 ) {
     val navController = rememberNavController()
 
-    // Retour à la page de lancement à chaque reprise de l'activité
     LaunchedEffect(navigateToLaunch.value) {
         if (navigateToLaunch.value) {
             navController.navigate(ROUTE_LAUNCH) {
@@ -38,7 +39,6 @@ fun AppNavigation(
         startDestination = ROUTE_LAUNCH
     ) {
         composable(ROUTE_LAUNCH) {
-            // Page de lancement : navigation système libre
             LaunchedEffect(Unit) { onExitKiosk() }
             LaunchScreen(
                 onLaunchSuccess = {
@@ -50,17 +50,30 @@ fun AppNavigation(
         }
 
         composable(ROUTE_MAIN) {
-            // Page principale : activation du mode kiosque
             LaunchedEffect(Unit) { onEnterKiosk() }
             MainScreen(
                 onNavigateToSettings = {
                     navController.navigate(ROUTE_SETTINGS)
+                },
+                onNavigateToGallery = {
+                    navController.navigate(ROUTE_GALLERY)
                 }
             )
         }
 
         composable(ROUTE_SETTINGS) {
             SettingsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(ROUTE_GALLERY) {
+            // La Galerie est en mode kiosque (kiosk reste actif depuis ROUTE_MAIN).
+            // Le BackHandler interne intercepte le retour systeme vers l'ecran principal.
+            // Aucun PIN requis pour y acceder.
+            GalleryScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

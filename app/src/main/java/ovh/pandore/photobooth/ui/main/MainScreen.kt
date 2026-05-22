@@ -2,12 +2,14 @@ package ovh.pandore.photobooth.ui.main
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.SoundPool
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -15,6 +17,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,7 +38,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -60,13 +63,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -76,16 +80,18 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import ovh.pandore.photobooth.MainActivity
 import ovh.pandore.photobooth.R
-import kotlinx.coroutines.delay
 import ovh.pandore.photobooth.ui.components.MjpegStreamView
-import ovh.pandore.photobooth.ui.components.QrCodeImage
 
 @SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 fun MainScreen(
     onNavigateToSettings: () -> Unit,
+    onNavigateToGallery: () -> Unit,
     viewModel: MainViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -93,12 +99,10 @@ fun MainScreen(
     val context = LocalContext.current
     val activity = context as? MainActivity
 
-    // Interception du bouton retour en mode kiosque : demande le PIN de sortie
     BackHandler(enabled = true) {
         viewModel.showExitPinDialog()
     }
 
-    // SoundPool pour le son de déclencheur
     val soundPool = remember {
         SoundPool.Builder()
             .setMaxStreams(1)
@@ -110,40 +114,18 @@ fun MainScreen(
             )
             .build()
     }
-    val shutterSoundId = remember(soundPool) {
-        soundPool.load(context, R.raw.photo, 1)
-    }
-    DisposableEffect(soundPool) {
-        onDispose { soundPool.release() }
-    }
+    val shutterSoundId = remember(soundPool) { soundPool.load(context, R.raw.photo, 1) }
+    DisposableEffect(soundPool) { onDispose { soundPool.release() } }
 
-    // État d'expansion du QR code
-    var qrExpanded by remember { mutableStateOf(false) }
-
-    // Animation de pulse périodique sur le QR code (toutes les 10 s)
-    val qrPulseScale = remember { Animatable(1f) }
-    LaunchedEffect(uiState.albumLink) {
-        if (uiState.albumLink.isNotBlank()) {
-            while (true) {
-                delay(10_000L)
-                qrPulseScale.animateTo(1.13f, animationSpec = tween(380))
-                qrPulseScale.animateTo(1f,    animationSpec = tween(380))
-            }
-        }
-    }
-
-    // Garde l'écran allumé en permanence
     DisposableEffect(Unit) {
         val window = (context as? Activity)?.window
         window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        onDispose {
-            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
+        onDispose { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Rafraîchit le lien d'album et la durée de vignette (utile au retour des réglages)
     LaunchedEffect(Unit) {
         viewModel.refreshAlbumLink()
+        viewModel.loadRecentPhotos()
     }
 
     LaunchedEffect(uiState.error) {
@@ -153,25 +135,16 @@ fun MainScreen(
         }
     }
 
-    // BoxWithConstraints permet de calculer dynamiquement la hauteur du letterbox
-    // entre la vidéo 720p (16:9) et les bords de l'écran (16:10 sur SM-T590).
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        // Aspect ratio de l'écran et du flux vidéo 720p
         val screenAspect = maxWidth.value / maxHeight.value
-        val videoAspect = 16f / 9f
+        val videoAspect  = 16f / 9f
 
-        // Bande letterbox en haut/bas lorsque l'écran est plus « carré » que 16:9.
-        // Sur SM-T590 (1443×902 dp ≈ 16:10) : letterboxTop ≈ 45 dp.
         val letterboxTopDp: Dp = if (screenAspect < videoAspect) {
             ((maxHeight - maxWidth / videoAspect) / 2).coerceAtLeast(0.dp)
-        } else {
-            0.dp
-        }
+        } else 0.dp
 
-        // Décalage vertical pour centrer le bouton dans la bande letterbox
         val settingsBtnTopPadding: Dp = ((letterboxTopDp - 48.dp) / 2).coerceAtLeast(4.dp)
 
-        // Flux vidéo MJPEG plein écran
         if (uiState.streamUrl.isNotBlank()) {
             MjpegStreamView(
                 streamUrl = uiState.streamUrl,
@@ -181,21 +154,18 @@ fun MainScreen(
             )
         }
 
-        // QR code en haut à droite — pulse périodique + clic pour agrandir
-        if (uiState.albumLink.isNotBlank()) {
-            QrCodeImage(
-                content = uiState.albumLink,
+        // Diaporama de photos en haut à droite (remplace le QR code)
+        if (uiState.recentPhotoUris.isNotEmpty()) {
+            PhotoSlideshow(
+                photoUris = uiState.recentPhotoUris,
+                onNavigateToGallery = onNavigateToGallery,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .scale(qrPulseScale.value)
-                    .clickable { qrExpanded = true },
+                    .padding(16.dp),
                 size = 140.dp
             )
         }
 
-        // Bouton de capture centré en bas + bouton Flash à sa gauche
-        // Les boutons sont désactivés pendant l'affichage de la vignette ou lors de la saisie d'un PIN
         val buttonsDisabled = uiState.capturedPhotoBytes != null
                 || uiState.showPinDialog
                 || uiState.showExitPinDialog
@@ -205,7 +175,6 @@ fun MainScreen(
                 .padding(bottom = 24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Bouton Flash
             FilledIconButton(
                 onClick = { viewModel.toggleFlash() },
                 enabled = !buttonsDisabled,
@@ -214,8 +183,7 @@ fun MainScreen(
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = if (uiState.flashEnabled)
                         Color(0xFFFFC107).copy(alpha = 0.9f)
-                    else
-                        Color.White.copy(alpha = 0.55f),
+                    else Color.White.copy(alpha = 0.55f),
                     contentColor = Color.Black
                 )
             ) {
@@ -228,7 +196,6 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Bouton de capture
             FilledIconButton(
                 onClick = {
                     if (!uiState.isCapturing) {
@@ -256,7 +223,6 @@ fun MainScreen(
             }
         }
 
-        // Bouton réglages — positionné dans l'interstice letterbox en haut à gauche
         IconButton(
             onClick = viewModel::showPinDialog,
             modifier = Modifier
@@ -271,7 +237,6 @@ fun MainScreen(
             )
         }
 
-        // Indicateur de perte de flux — décalé à gauche pour ne pas chevaucher le QR code
         if (!uiState.streamConnected) {
             IconButton(
                 onClick = viewModel::retryStream,
@@ -288,18 +253,14 @@ fun MainScreen(
             }
         }
 
-        // Overlay QR code agrandi
-        QrExpandedOverlay(
-            visible = qrExpanded && uiState.albumLink.isNotBlank(),
-            content = uiState.albumLink,
-            onDismiss = { qrExpanded = false }
-        )
-
-        // Vignette animée de la photo prise
         CapturedPhotoOverlay(
             photoBytes = uiState.capturedPhotoBytes,
             durationMs = uiState.photoPreviewDurationMs,
-            onDismiss = viewModel::dismissCaptureSuccess
+            onDismiss = viewModel::dismissCaptureSuccess,
+            onNavigateToGallery = {
+                viewModel.dismissCaptureSuccess()
+                onNavigateToGallery()
+            }
         )
 
         SnackbarHost(
@@ -308,7 +269,6 @@ fun MainScreen(
         ) { data -> Snackbar(snackbarData = data) }
     }
 
-    // Dialog PIN pour accéder aux réglages
     if (uiState.showPinDialog) {
         PinDialog(
             hasError = uiState.pinError,
@@ -317,7 +277,6 @@ fun MainScreen(
         )
     }
 
-    // Dialog PIN pour quitter l'application via le bouton retour
     if (uiState.showExitPinDialog) {
         ExitPinDialog(
             hasError = uiState.exitPinError,
@@ -332,89 +291,137 @@ fun MainScreen(
     }
 }
 
+// ── Diaporama de photos ────────────────────────────────────────────────────────
+
 /**
- * Overlay plein écran pour afficher le QR code agrandi.
- * Un appui sur le fond sombre ou sur la croix referme la vue.
+ * Affiche un diaporama animé des photos récentes dans un cadre de [size].
+ * Change de photo toutes les 3 secondes avec un fondu enchaîné.
+ * Un clic navigue vers la Galerie.
  */
 @Composable
-private fun QrExpandedOverlay(
-    visible: Boolean,
-    content: String,
-    onDismiss: () -> Unit
+private fun PhotoSlideshow(
+    photoUris: List<Uri>,
+    onNavigateToGallery: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 140.dp
 ) {
-    // Fond assombri — clic n'importe où pour fermer
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(220)),
-        exit  = fadeOut(tween(350))
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.82f))
-                .clickable(onClick = onDismiss)
-        )
+    var currentIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(photoUris.size) {
+        if (photoUris.size > 1) {
+            while (true) {
+                delay(3_000L)
+                currentIndex = (currentIndex + 1) % photoUris.size
+            }
+        }
     }
 
-    // QR code centré avec zoom-in spring + bouton fermer
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(180)) + scaleIn(
-            initialScale = 0.20f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness    = Spring.StiffnessMediumLow
-            )
-        ),
-        exit  = fadeOut(tween(300)) + scaleOut(
-            targetScale   = 0.20f,
-            animationSpec = tween(300)
-        ),
-        modifier = Modifier.fillMaxSize()
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(12.dp))
+            .border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+            .clickable(onClick = onNavigateToGallery)
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            QrCodeImage(content = content, size = 310.dp)
-
-            // Croix de fermeture en haut à droite de l'overlay
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Fermer",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp)
+        AnimatedContent(
+            targetState = currentIndex.coerceIn(photoUris.indices),
+            transitionSpec = {
+                fadeIn(tween(700)) togetherWith fadeOut(tween(700))
+            },
+            label = "photo_slideshow"
+        ) { index ->
+            val uri = photoUris.getOrNull(index)
+            if (uri != null) {
+                UriThumbnailImage(
+                    uri = uri,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
+            } else {
+                Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray))
             }
         }
     }
 }
 
+// ── Chargement asynchrone de vignettes ────────────────────────────────────────
+
 /**
- * Overlay plein écran affiché après la prise de photo.
- * La vignette apparaît depuis le centre en zoom-in spring, reste [durationMs] ms,
- * puis disparaît en zoom-out fluide.
+ * Charge et affiche une vignette depuis un content URI de façon asynchrone.
+ */
+@Composable
+internal fun UriThumbnailImage(
+    uri: Uri,
+    modifier: Modifier = Modifier,
+    targetSize: Int = 400,
+    contentScale: ContentScale = ContentScale.Crop
+) {
+    val context = LocalContext.current
+    val bitmap by produceState<Bitmap?>(null, uri) {
+        value = withContext(Dispatchers.IO) {
+            loadThumbnailBitmap(context.contentResolver, uri, targetSize)
+        }
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = contentScale
+        )
+    } else {
+        Box(modifier = modifier.background(Color.DarkGray.copy(alpha = 0.5f)))
+    }
+}
+
+/**
+ * Décode une vignette depuis un content URI avec downsampling intelligent.
+ */
+internal fun loadThumbnailBitmap(
+    resolver: android.content.ContentResolver,
+    uri: Uri,
+    targetSize: Int
+): Bitmap? {
+    return try {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+
+        var sampleSize = 1
+        while (opts.outWidth / sampleSize > targetSize || opts.outHeight / sampleSize > targetSize) {
+            sampleSize *= 2
+        }
+
+        resolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(
+                stream, null,
+                BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            )
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+// ── Overlay photo prise ────────────────────────────────────────────────────────
+
+/**
+ * Overlay plein écran après la prise de photo.
+ * Affiche la photo avec un bouton "Récupérer les photos" pour accéder à la Galerie.
  */
 @Composable
 private fun CapturedPhotoOverlay(
     photoBytes: ByteArray?,
     durationMs: Long,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onNavigateToGallery: () -> Unit
 ) {
-    // Convertit les bytes en ImageBitmap une seule fois par nouvelle photo
     val imageBitmap = remember(photoBytes) {
         photoBytes?.let {
             BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap()
         }
     }
 
-    // Timer : auto-fermeture après durationMs, repart si une nouvelle photo arrive
     LaunchedEffect(photoBytes) {
         if (photoBytes != null) {
             delay(durationMs)
@@ -422,7 +429,6 @@ private fun CapturedPhotoOverlay(
         }
     }
 
-    // Fond assombri
     AnimatedVisibility(
         visible = photoBytes != null,
         enter = fadeIn(animationSpec = tween(250)),
@@ -435,7 +441,6 @@ private fun CapturedPhotoOverlay(
         )
     }
 
-    // Vignette
     AnimatedVisibility(
         visible = photoBytes != null && imageBitmap != null,
         enter = fadeIn(tween(200)) + scaleIn(
@@ -446,7 +451,7 @@ private fun CapturedPhotoOverlay(
             )
         ),
         exit = fadeOut(tween(380)) + scaleOut(
-            targetScale  = 0.04f,
+            targetScale   = 0.04f,
             animationSpec = tween(380)
         ),
         modifier = Modifier.fillMaxSize()
@@ -455,25 +460,35 @@ private fun CapturedPhotoOverlay(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            if (imageBitmap != null) {
-                Image(
-                    bitmap = imageBitmap,
-                    contentDescription = "Photo prise",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth(0.70f)
-                        .aspectRatio(imageBitmap.width.toFloat() / imageBitmap.height.toFloat())
-                        .border(
-                            width = 6.dp,
-                            color = Color.White,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clip(RoundedCornerShape(12.dp))
-                )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (imageBitmap != null) {
+                    Image(
+                        bitmap = imageBitmap,
+                        contentDescription = "Photo prise",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth(0.70f)
+                            .aspectRatio(imageBitmap.width.toFloat() / imageBitmap.height.toFloat())
+                            .border(width = 6.dp, color = Color.White, shape = RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                Button(
+                    onClick = onNavigateToGallery,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.92f),
+                        contentColor   = Color.Black
+                    )
+                ) {
+                    Text("Récupérer les photos")
+                }
             }
         }
     }
 }
+
+// ── Dialogs PIN ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun PinDialog(
@@ -513,10 +528,6 @@ private fun PinDialog(
     )
 }
 
-/**
- * Dialog de confirmation PIN avant de quitter l'application.
- * Affiché lorsque l'utilisateur appuie sur le bouton retour système depuis l'écran principal.
- */
 @Composable
 private fun ExitPinDialog(
     hasError: Boolean,
@@ -554,4 +565,3 @@ private fun ExitPinDialog(
         }
     )
 }
-

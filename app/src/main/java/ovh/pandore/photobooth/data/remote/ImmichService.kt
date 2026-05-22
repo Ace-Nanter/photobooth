@@ -90,6 +90,70 @@ class ImmichService(
     }
 
     /**
+     * Récupère tous les liens de partage de type ALBUM pour l'album donné.
+     * GET /api/shared-links
+     */
+    suspend fun getAlbumSharedLinks(albumId: String): List<ImmichSharedLink> =
+        withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url("$normalizedBase/api/shared-links")
+                    .header("x-api-key", apiKey)
+                    .get()
+                    .build()
+                NetworkClient.immichClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext emptyList()
+                    val json = response.body?.string() ?: return@withContext emptyList()
+                    val type = object : TypeToken<List<ImmichSharedLink>>() {}.type
+                    val all: List<ImmichSharedLink> = gson.fromJson(json, type) ?: emptyList()
+                    // Filtre uniquement les liens appartenant à l'album souhaité
+                    all.filter { link ->
+                        link.type == "ALBUM" &&
+                                (link.albumId == albumId || link.album?.id == albumId)
+                    }
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+    /**
+     * Crée un lien de partage public pour l'album (sans mot de passe, avec téléchargement).
+     * POST /api/shared-links
+     * @return le lien créé, ou null en cas d'échec.
+     */
+    suspend fun createAlbumShareLink(albumId: String): ImmichSharedLink? =
+        withContext(Dispatchers.IO) {
+            try {
+                val bodyMap = mapOf(
+                    "type"           to "ALBUM",
+                    "albumId"        to albumId,
+                    "allowDownload"  to true,
+                    "allowUpload"    to false,
+                    "showExif"       to true
+                )
+                val body = gson.toJson(bodyMap).toRequestBody("application/json".toMediaType())
+                val request = Request.Builder()
+                    .url("$normalizedBase/api/shared-links")
+                    .header("x-api-key", apiKey)
+                    .post(body)
+                    .build()
+                NetworkClient.immichClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    val json = response.body?.string() ?: return@withContext null
+                    gson.fromJson(json, ImmichSharedLink::class.java)
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+    /**
+     * Construit l'URL publique d'un lien de partage à partir de sa clé.
+     */
+    fun buildShareUrl(linkKey: String): String = "$normalizedBase/share/$linkKey"
+
+    /**
      * Ajoute un asset à un album.
      * @return true si l'ajout a réussi.
      */
