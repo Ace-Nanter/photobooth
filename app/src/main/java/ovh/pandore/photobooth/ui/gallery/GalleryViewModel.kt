@@ -8,8 +8,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -19,13 +23,9 @@ import ovh.pandore.photobooth.data.remote.ImmichService
 // ── États possibles pour le lien de partage de l'album ──────────────────────
 
 sealed class AlbumLinkState {
-    /** Aucun album n'est configuré dans les réglages. */
     object NoAlbumSelected : AlbumLinkState()
-    /** Chargement en cours (appels API Immich). */
     object Loading : AlbumLinkState()
-    /** Lien prêt à être affiché en QR Code. */
     data class Ready(val url: String) : AlbumLinkState()
-    /** Erreur lors de la récupération/création du lien. */
     data class Error(val message: String) : AlbumLinkState()
 }
 
@@ -34,7 +34,7 @@ data class GalleryUiState(
     val albumLinkState: AlbumLinkState = AlbumLinkState.Loading,
     val email: String = "",
     val isSubmitting: Boolean = false,
-    val submitMessage: String? = null,
+    val showConfirmDialog: Boolean = false,
     val submitError: String? = null
 )
 
@@ -45,6 +45,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow(GalleryUiState())
     val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
 
+    /** Événements Toast one-shot (message à afficher). */
+    private val _toastEvent = MutableSharedFlow<String>()
+    val toastEvent: SharedFlow<String> = _toastEvent.asSharedFlow()
+
     init {
         resolveAlbumLink()
         loadPhotos()
@@ -52,56 +56,33 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     // ── Résolution du lien Immich ────────────────────────────────────────────
 
-    /**
-     * 1. Vérifie si un album est sélectionné.
-     * 2. Récupère les liens de partage existants.
-     * 3. Sélectionne le premier lien public (sans mot de passe, avec téléchargement).
-     * 4. Si aucun lien éligible, en crée un nouveau.
-     */
     fun resolveAlbumLink() {
         viewModelScope.launch {
             _uiState.update { it.copy(albumLinkState = AlbumLinkState.Loading) }
 
-            val albumId   = prefs.getImmichAlbumId()
-            val baseUrl   = prefs.getImmichBaseUrl()
-            val apiKey    = prefs.getImmichApiKey()
+            val albumId = prefs.getImmichAlbumId()
+            val baseUrl = prefs.getImmichBaseUrl()
+            val apiKey  = prefs.getImmichApiKey()
 
             if (albumId.isBlank()) {
                 _uiState.update { it.copy(albumLinkState = AlbumLinkState.NoAlbumSelected) }
                 return@launch
             }
-
             if (baseUrl.isBlank() || apiKey.isBlank()) {
-                _uiState.update {
-                    it.copy(albumLinkState = AlbumLinkState.Error("Configuration Immich incomplète"))
-                }
+                _uiState.update { it.copy(albumLinkState = AlbumLinkState.Error("Configuration Immich incomplète")) }
                 return@launch
             }
 
             val service = ImmichService(baseUrl, apiKey)
-
-            // Étape 1 : liens existants
             val existingLinks = service.getAlbumSharedLinks(albumId)
-
-            // Étape 2 : chercher un lien public sans mot de passe avec téléchargement
-            val eligible = existingLinks.firstOrNull { link ->
-                link.allowDownload && link.password.isNullOrBlank()
-            }
+            val eligible = existingLinks.firstOrNull { it.allowDownload && it.password.isNullOrBlank() }
 
             val shareUrl = if (eligible != null) {
-                // Étape 2 : lien trouvé
                 service.buildShareUrl(eligible.key)
             } else {
-                // Étape 3 : créer un nouveau lien
-                val created = service.createAlbumShareLink(albumId)
-                if (created != null) {
-                    service.buildShareUrl(created.key)
-                } else {
-                    null
-                }
+                service.createAlbumShareLink(albumId)?.let { service.buildShareUrl(it.key) }
             }
 
-            // Étape 4 : mettre à jour l'état
             _uiState.update {
                 it.copy(
                     albumLinkState = if (shareUrl != null)
@@ -129,10 +110,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Envoie l'adresse email au webservice.
-     * TODO: Implémenter l'appel API réel quand l'endpoint sera défini.
+     * Valide l'email et affiche la dialog de confirmation si valide.
+     * Appelé par l'icône Send ou la touche IME.
      */
-    fun submitEmail() {
+    fun requestSubmitEmail() {
         val email = _uiState.value.email.trim()
         if (email.isBlank()) {
             _uiState.update { it.copy(submitError = "Veuillez entrer votre adresse email") }
@@ -142,28 +123,39 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(submitError = "Adresse email invalide") }
             return
         }
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSubmitting = true, submitError = null) }
-            // TODO: Remplacer par l'appel API réel vers le webservice
-            delay(500L)
-            _uiState.update {
-                it.copy(
-                    isSubmitting = false,
-                    submitMessage = "Email envoyé !",
-                    email = ""
-                )
-            }
-        }
+        _uiState.update { it.copy(submitError = null, showConfirmDialog = true) }
     }
 
-    fun dismissSubmitMessage() {
-        _uiState.update { it.copy(submitMessage = null, submitError = null) }
+    /** Ferme la dialog sans envoyer (email conservé). */
+    fun dismissConfirmDialog() {
+        _uiState.update { it.copy(showConfirmDialog = false) }
+    }
+
+    /**
+     * Appelé après confirmation "Oui".
+     * TODO: Remplacer par l'appel API réel quand l'endpoint sera défini.
+     */
+    fun confirmAndSubmitEmail() {
+        _uiState.update { it.copy(showConfirmDialog = false, isSubmitting = true) }
+        viewModelScope.launch {
+            try {
+                // TODO: remplacer par l'appel HTTP réel
+                // val response = emailService.sendLink(email, albumUrl)
+                // if (!response.isSuccessful) throw Exception("Erreur serveur ${response.code}")
+                delay(500.milliseconds) // simulation
+                _uiState.update { it.copy(isSubmitting = false, email = "") }
+                _toastEvent.emit("Email sauvegardé")
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isSubmitting = false) }
+                _toastEvent.emit("Erreur lors de l'envoi : ${e.message}")
+            }
+        }
     }
 
     // ── MediaStore ───────────────────────────────────────────────────────────
 
     private fun queryPhotosFromMediaStore(): List<Uri> {
-        val resolver  = getApplication<Application>().contentResolver
+        val resolver   = getApplication<Application>().contentResolver
         val projection = arrayOf(MediaStore.Images.Media._ID)
         val selection  = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
         val selArgs    = arrayOf("Pictures/Photobooth%")
@@ -177,11 +169,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
-                list.add(
-                    ContentUris.withAppendedId(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id
-                    )
-                )
+                list.add(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id))
             }
         }
         return list

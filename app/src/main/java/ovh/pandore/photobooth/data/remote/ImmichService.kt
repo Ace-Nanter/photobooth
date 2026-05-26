@@ -10,6 +10,7 @@ import okhttp3.MultipartBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import ovh.pandore.photobooth.domain.model.ImmichAlbum
+import ovh.pandore.photobooth.domain.model.ImmichSharedLink
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,7 +45,7 @@ class ImmichService(
                 val type = object : TypeToken<List<ImmichAlbum>>() {}.type
                 gson.fromJson(json, type) ?: emptyList()
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -84,7 +85,7 @@ class ImmichService(
                 val json = response.body?.string() ?: return@withContext null
                 JsonParser.parseString(json).asJsonObject?.get("id")?.asString
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -112,8 +113,8 @@ class ImmichService(
                                 (link.albumId == albumId || link.album?.id == albumId)
                     }
                 }
-            } catch (e: Exception) {
-                emptyList()
+            } catch (_: Exception) {
+                emptyList<ImmichSharedLink>()
             }
         }
 
@@ -143,7 +144,7 @@ class ImmichService(
                     val json = response.body?.string() ?: return@withContext null
                     gson.fromJson(json, ImmichSharedLink::class.java)
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }
@@ -172,9 +173,8 @@ class ImmichService(
                 NetworkClient.immichClient.newCall(request).execute().use { response ->
                     response.isSuccessful
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 false
             }
         }
 }
-

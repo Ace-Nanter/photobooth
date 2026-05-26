@@ -1,6 +1,7 @@
 package ovh.pandore.photobooth.ui.gallery
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -28,7 +29,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -37,10 +39,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -66,14 +67,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import ovh.pandore.photobooth.ui.components.QrCodeImage
 import ovh.pandore.photobooth.ui.main.UriThumbnailImage
 
-/**
- * Vue Galerie : affiche toutes les photos Photobooth, propose le partage par email
- * et affiche le QR code de l'album Immich.
- *
- * Navigation : accessible depuis l'ecran principal sans code PIN.
- * Le bouton retour systeme et le bouton "Retour" ramenent vers l'ecran principal.
- * Le mode kiosque reste actif (pas de sortie vers le systeme).
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
@@ -81,28 +74,43 @@ fun GalleryScreen(
     viewModel: GalleryViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
-    // Index de la photo actuellement affichée en plein écran (null = viewer fermé)
     var viewerIndex by remember { mutableStateOf<Int?>(null) }
 
     BackHandler(enabled = true) {
-        if (viewerIndex != null) {
-            viewerIndex = null
-        } else {
-            onNavigateBack()
-        }
+        if (viewerIndex != null) viewerIndex = null else onNavigateBack()
     }
 
+    // Chargement des photos à l'entrée
+    LaunchedEffect(Unit) { viewModel.loadPhotos() }
+
+    // Toast one-shot (succès ou erreur API)
     LaunchedEffect(Unit) {
-        viewModel.loadPhotos()
+        viewModel.toastEvent.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
     }
 
-    LaunchedEffect(uiState.submitMessage) {
-        uiState.submitMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.dismissSubmitMessage()
-        }
+    // Dialog de confirmation envoi email
+    if (uiState.showConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissConfirmDialog,
+            title = { Text("Confirmation") },
+            text = {
+                Text("Le lien sera envoyé à ${uiState.email.trim()}.\nÊtes-vous sûr ?")
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmAndSubmitEmail) {
+                    Text("Oui")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissConfirmDialog) {
+                    Text("Non")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -111,18 +119,10 @@ fun GalleryScreen(
                 title = { Text("Galerie") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Retour"
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 }
             )
-        },
-        snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState) { data ->
-                Snackbar(snackbarData = data)
-            }
         }
     ) { innerPadding ->
         Box(
@@ -152,6 +152,8 @@ fun GalleryScreen(
                             textAlign = TextAlign.Start
                         )
                         Spacer(modifier = Modifier.height(12.dp))
+
+                        // Champ email + icône Send sur la même ligne
                         OutlinedTextField(
                             value = uiState.email,
                             onValueChange = viewModel::onEmailChange,
@@ -164,29 +166,31 @@ fun GalleryScreen(
                             },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Email,
-                                imeAction = ImeAction.Done
+                                imeAction = ImeAction.Send
                             ),
                             keyboardActions = KeyboardActions(
-                                onDone = { viewModel.submitEmail() }
+                                onSend = { viewModel.requestSubmitEmail() }
                             ),
+                            trailingIcon = {
+                                if (uiState.isSubmitting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    IconButton(
+                                        onClick = viewModel::requestSubmitEmail,
+                                        enabled = !uiState.isSubmitting
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Send,
+                                            contentDescription = "Envoyer"
+                                        )
+                                    }
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = viewModel::submitEmail,
-                            enabled = !uiState.isSubmitting
-                            // Pas de fillMaxWidth — largeur naturelle du label
-                        ) {
-                            if (uiState.isSubmitting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text("Soumettre")
-                            }
-                        }
                     }
 
                     VerticalDivider()
@@ -247,9 +251,9 @@ fun GalleryScreen(
             val idx = viewerIndex
             if (idx != null && uiState.photoUris.isNotEmpty()) {
                 PhotoViewer(
-                    photoUris   = uiState.photoUris,
+                    photoUris    = uiState.photoUris,
                     initialIndex = idx,
-                    onClose     = { viewerIndex = null }
+                    onClose      = { viewerIndex = null }
                 )
             }
         }
@@ -263,10 +267,7 @@ private fun AlbumQrCodeSection(state: AlbumLinkState) {
     val boxSize = 140.dp
     when (state) {
         is AlbumLinkState.Loading -> {
-            Box(
-                modifier = Modifier.size(boxSize),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.size(boxSize), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(40.dp))
             }
         }
@@ -274,10 +275,7 @@ private fun AlbumQrCodeSection(state: AlbumLinkState) {
             Box(
                 modifier = Modifier
                     .size(boxSize)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(8.dp)
-                    ),
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -295,10 +293,7 @@ private fun AlbumQrCodeSection(state: AlbumLinkState) {
             Box(
                 modifier = Modifier
                     .size(boxSize)
-                    .background(
-                        MaterialTheme.colorScheme.errorContainer,
-                        RoundedCornerShape(8.dp)
-                    ),
+                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -323,18 +318,15 @@ private fun GalleryPhotoCell(uri: Uri, onClick: () -> Unit) {
             .clip(RoundedCornerShape(6.dp))
             .background(Color.DarkGray.copy(alpha = 0.3f))
             .pointerInput(Unit) {
-                detectHorizontalDragGestures { _, _ -> } // absorb accidental swipes on cells
+                detectHorizontalDragGestures { _, _ -> }
             }
     ) {
         UriThumbnailImage(
             uri = uri,
             modifier = Modifier
                 .fillMaxSize()
-                    .pointerInput(Unit) {
-                    // Utilise detectTapGestures pour distinguer tap vs swipe
-                    detectTapGestures(
-                        onTap = { onClick() }
-                    )
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onClick() })
                 },
             targetSize = 300,
             contentScale = ContentScale.Crop
@@ -344,12 +336,6 @@ private fun GalleryPhotoCell(uri: Uri, onClick: () -> Unit) {
 
 // ── Visionneuse plein écran avec navigation ────────────────────────────────────
 
-/**
- * Overlay plein écran pour visualiser une photo.
- * - Croix en haut à droite pour fermer.
- * - Boutons < et > pour naviguer entre les photos.
- * - Swipe gauche/droite pour naviguer.
- */
 @Composable
 private fun PhotoViewer(
     photoUris: List<Uri>,
@@ -378,12 +364,9 @@ private fun PhotoViewer(
                         dragAccum = 0f
                     },
                     onDragCancel = { dragAccum = 0f }
-                ) { _, delta ->
-                    dragAccum += delta
-                }
+                ) { _, delta -> dragAccum += delta }
             }
     ) {
-        // Photo centrée
         val uri = photoUris.getOrNull(currentIndex)
         if (uri != null) {
             UriThumbnailImage(
@@ -396,56 +379,34 @@ private fun PhotoViewer(
             )
         }
 
-        // Bouton fermer (croix) — haut droite
         IconButton(
             onClick = onClose,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = "Fermer",
-                tint = Color.White,
-                modifier = Modifier.size(32.dp)
-            )
+            Icon(Icons.Filled.Close, contentDescription = "Fermer", tint = Color.White,
+                modifier = Modifier.size(32.dp))
         }
 
-        // Bouton précédent (<) — bord gauche
         if (currentIndex > 0) {
             IconButton(
                 onClick = { goPrev() },
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 8.dp)
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBackIos,
-                    contentDescription = "Photo précédente",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp)
-                )
+                Icon(Icons.AutoMirrored.Filled.ArrowBackIos, contentDescription = "Photo précédente",
+                    tint = Color.White, modifier = Modifier.size(36.dp))
             }
         }
 
-        // Bouton suivant (>) — bord droit
         if (currentIndex < photoUris.lastIndex) {
             IconButton(
                 onClick = { goNext() },
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 8.dp)
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                    contentDescription = "Photo suivante",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp)
-                )
+                Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = "Photo suivante",
+                    tint = Color.White, modifier = Modifier.size(36.dp))
             }
         }
 
-        // Compteur de photos — bas centre
         Text(
             text = "${currentIndex + 1} / ${photoUris.size}",
             color = Color.White.copy(alpha = 0.8f),
