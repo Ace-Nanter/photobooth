@@ -7,8 +7,6 @@ import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -18,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ovh.pandore.photobooth.data.local.PreferencesManager
+import ovh.pandore.photobooth.data.remote.EmailService
 import ovh.pandore.photobooth.data.remote.ImmichService
 
 // ── États possibles pour le lien de partage de l'album ──────────────────────
@@ -136,18 +135,16 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
      * TODO: Remplacer par l'appel API réel quand l'endpoint sera défini.
      */
     fun confirmAndSubmitEmail() {
+        val email = _uiState.value.email.trim()
         _uiState.update { it.copy(showConfirmDialog = false, isSubmitting = true) }
         viewModelScope.launch {
-            try {
-                // TODO: remplacer par l'appel HTTP réel
-                // val response = emailService.sendLink(email, albumUrl)
-                // if (!response.isSuccessful) throw Exception("Erreur serveur ${response.code}")
-                delay(500.milliseconds) // simulation
+            val result = EmailService.sendEmailLink(email)
+            if (result.isSuccess) {
                 _uiState.update { it.copy(isSubmitting = false, email = "") }
                 _toastEvent.emit("Email sauvegardé")
-            } catch (e: Exception) {
+            } else {
                 _uiState.update { it.copy(isSubmitting = false) }
-                _toastEvent.emit("Erreur lors de l'envoi : ${e.message}")
+                _toastEvent.emit("Erreur lors de l'envoi : ${result.exceptionOrNull()?.message}")
             }
         }
     }

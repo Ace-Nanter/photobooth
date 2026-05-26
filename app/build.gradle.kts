@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Lecture des secrets depuis secrets.properties (non commité)
+val secretsFile = rootProject.file("secrets.properties")
+val secrets = Properties().also {
+    if (secretsFile.exists()) it.load(secretsFile.inputStream())
 }
 
 android {
@@ -19,6 +27,16 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Injection des secrets dans BuildConfig
+        buildConfigField(
+            "String", "EMAIL_WEBHOOK_URL",
+            "\"${secrets.getProperty("EMAIL_WEBHOOK_URL", "")}\""
+        )
+        buildConfigField(
+            "String", "EMAIL_WEBHOOK_API_KEY",
+            "\"${secrets.getProperty("EMAIL_WEBHOOK_API_KEY", "")}\""
+        )
     }
 
     buildTypes {
@@ -33,6 +51,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true   // nécessaire pour les champs BuildConfig personnalisés
     }
     packaging {
         resources {

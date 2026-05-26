@@ -11,6 +11,9 @@
 *.jks
 *.keystore
 
+# ------ Secrets ------
+secrets.properties
+
 # App build outputs
 app/build/
 
