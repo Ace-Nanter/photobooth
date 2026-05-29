@@ -2,6 +2,7 @@ package ovh.pandore.photobooth.worker
 
 import android.content.Context
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import ovh.pandore.photobooth.data.local.PhotoRepository
@@ -48,7 +49,11 @@ class PhotoUploadWorker(
         val service = ImmichService(immichBaseUrl, immichApiKey)
         val bytes   = resolveBytes(fileRef) ?: return Result.failure()
 
-        val assetId = service.uploadAsset(fileRef, bytes) ?: return Result.retry()
+        // Récupère le DISPLAY_NAME MediaStore pour que le fichier ait un nom lisible avec timestamp
+        // sur Immich (ex: "photobooth_20240101_120000.jpg") plutôt que le seul ID numérique.
+        val displayName = resolveDisplayName(fileRef)
+
+        val assetId = service.uploadAsset(fileRef, bytes, displayName) ?: return Result.retry()
         val added   = service.addAssetToAlbum(assetId, immichAlbumId)
 
         return if (added) {
@@ -68,6 +73,31 @@ class PhotoUploadWorker(
             } else {
                 val f = java.io.File(fileRef)
                 if (f.exists()) f.readBytes() else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Résout le DISPLAY_NAME depuis MediaStore pour une content URI,
+     * ou extrait le nom depuis le chemin absolu pour un fichier ordinaire.
+     * Retourne null si la résolution échoue (le service utilisera son propre fallback).
+     */
+    private fun resolveDisplayName(fileRef: String): String? {
+        return try {
+            if (fileRef.startsWith("content://")) {
+                val uri = Uri.parse(fileRef)
+                applicationContext.contentResolver.query(
+                    uri,
+                    arrayOf(MediaStore.Images.Media.DISPLAY_NAME),
+                    null, null, null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+            } else {
+                val name = java.io.File(fileRef).name
+                name.ifBlank { null }
             }
         } catch (_: Exception) {
             null

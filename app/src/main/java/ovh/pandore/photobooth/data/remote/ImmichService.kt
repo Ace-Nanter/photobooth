@@ -52,16 +52,30 @@ class ImmichService(
 
     /**
      * Upload les bytes d'une photo vers Immich.
-     * @param fileRef  chemin ou content URI utilisé pour dériver le nom de fichier.
-     * @param bytes    contenu JPEG brut de la photo.
+     * @param fileRef          chemin ou content URI utilisé comme fallback pour dériver le nom.
+     * @param bytes            contenu JPEG brut de la photo.
+     * @param explicitFileName nom de fichier prioritaire (ex : DISPLAY_NAME récupéré via MediaStore).
+     *                         Doit inclure l'extension. Si null, le nom est dérivé de [fileRef].
      * @return l'ID de l'asset créé, ou null en cas d'échec.
      */
-    suspend fun uploadAsset(fileRef: String, bytes: ByteArray): String? = withContext(Dispatchers.IO) {
+    suspend fun uploadAsset(
+        fileRef: String,
+        bytes: ByteArray,
+        explicitFileName: String? = null
+    ): String? = withContext(Dispatchers.IO) {
         try {
             val now = isoFormat.format(Date())
-            // Dérive un nom de fichier lisible depuis la référence
-            val fileName = fileRef.substringAfterLast('/').substringAfterLast(':')
-                .ifBlank { "photo_${System.currentTimeMillis()}.jpg" }
+            // Utilise le nom explicite s'il est fourni (ex: "photobooth_20240101_120000.jpg"),
+            // sinon dérive depuis la référence.
+            // Pour les content URIs (ex: content://media/external/images/media/41),
+            // substringAfterLast('/') renvoie uniquement le chiffre MediaStore (ex: "41"),
+            // sans extension — ce qui provoquerait une erreur 400 "Unsupported file type 41"
+            // côté Immich. On s'assure donc qu'une extension .jpg est toujours présente.
+            val fileName = explicitFileName ?: run {
+                val rawName = fileRef.substringAfterLast('/').substringAfterLast(':')
+                    .ifBlank { "photo_${System.currentTimeMillis()}" }
+                if (rawName.contains('.')) rawName else "photo_$rawName.jpg"
+            }
             val fileBody = bytes.toRequestBody("image/jpeg".toMediaType())
 
             val multipartBody = MultipartBody.Builder()

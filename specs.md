@@ -99,7 +99,7 @@ Un process background les envoie vers une instance Immich, dans un album dédié
 * Surveille l'arrivée de nouvelles photos récupérées par l'application (file WorkManager taguée `pending_photo_upload`).
 * Les envoie sur une instance Immich dans l'album configuré dans l'écran de réglages.
 * **Si l'upload s'est correctement déroulé, la photo est CONSERVÉE sur le disque local.** L'ID Immich retourné est sauvegardé dans `PhotoRepository` (fichier `photo_records.json` en JSON) en association avec la content URI locale.
-* Sur Android 10+ (API 29+) : les photos sont gérées via MediaStore (content URI `content://media/external/images/media/…`).
+* Sur Android 10+ (API 29+) : les photos sont gérées via MediaStore (content URI `content://media/external/images/media/…`). Le nom de fichier suit le format **`photobooth_yyyyMMdd_HHmmss.jpg`** (ex : `photobooth_20240101_120000.jpg`), déterminé au moment de la capture dans `MainViewModel.savePhotoLocally()`. Lors de l'upload vers Immich, `PhotoUploadWorker` interroge le champ `DISPLAY_NAME` de MediaStore pour transmettre ce nom à `ImmichService.uploadAsset()` via le paramètre `explicitFileName`, garantissant que le fichier apparaît avec le même nom lisible dans Immich. En cas d'échec de résolution, un fallback s'assure qu'une extension `.jpg` est toujours présente pour éviter l'erreur 400 "Unsupported file type".
 
 ## Base de données locale des photos
 * Classe `PhotoRecord` : `localUri` (String), `immichId` (String?), `capturedAt` (Long).

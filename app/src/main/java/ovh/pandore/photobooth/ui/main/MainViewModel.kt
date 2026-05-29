@@ -25,6 +25,9 @@ import ovh.pandore.photobooth.data.local.PhotoRepository
 import ovh.pandore.photobooth.data.local.PreferencesManager
 import ovh.pandore.photobooth.data.remote.IpWebCamService
 import ovh.pandore.photobooth.worker.PhotoUploadWorker
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @Suppress("ArrayInDataClass")
@@ -222,7 +225,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- Helpers ---
 
     private suspend fun savePhotoLocally(bytes: ByteArray): String = withContext(Dispatchers.IO) {
-        val fileName = "photo_${System.currentTimeMillis()}.jpg"
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date())
+        val fileName = "photobooth_$timestamp.jpg"
         val resolver = getApplication<Application>().contentResolver
         val contentValues = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
