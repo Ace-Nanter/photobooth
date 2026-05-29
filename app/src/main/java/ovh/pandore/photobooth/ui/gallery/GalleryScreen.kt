@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -92,6 +93,17 @@ fun GalleryScreen(
         }
     }
 
+    // Ajustement de l'index visionneuse si la liste de photos change (ex: après suppression)
+    LaunchedEffect(uiState.photoUris.size) {
+        val idx = viewerIndex
+        if (idx != null) {
+            when {
+                uiState.photoUris.isEmpty() -> viewerIndex = null
+                idx >= uiState.photoUris.size -> viewerIndex = uiState.photoUris.size - 1
+            }
+        }
+    }
+
     // Dialog de confirmation envoi email
     if (uiState.showConfirmDialog) {
         AlertDialog(
@@ -108,6 +120,25 @@ fun GalleryScreen(
             dismissButton = {
                 TextButton(onClick = viewModel::dismissConfirmDialog) {
                     Text("Non")
+                }
+            }
+        )
+    }
+
+    // Dialog de confirmation suppression photo
+    if (uiState.showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteDialog,
+            title = { Text("Supprimer la photo") },
+            text = { Text("Voulez-vous vraiment supprimer cette photo ?") },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDeletePhoto) {
+                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeleteDialog) {
+                    Text("Annuler")
                 }
             }
         )
@@ -251,9 +282,11 @@ fun GalleryScreen(
             val idx = viewerIndex
             if (idx != null && uiState.photoUris.isNotEmpty()) {
                 PhotoViewer(
-                    photoUris    = uiState.photoUris,
-                    initialIndex = idx,
-                    onClose      = { viewerIndex = null }
+                    photoUris       = uiState.photoUris,
+                    initialIndex    = idx,
+                    onClose         = { viewerIndex = null },
+                    onDeleteRequest = viewModel::requestDeletePhoto,
+                    isDeleting      = uiState.isDeleting
                 )
             }
         }
@@ -340,7 +373,9 @@ private fun GalleryPhotoCell(uri: Uri, onClick: () -> Unit) {
 private fun PhotoViewer(
     photoUris: List<Uri>,
     initialIndex: Int,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onDeleteRequest: (Uri) -> Unit,
+    isDeleting: Boolean = false
 ) {
     var currentIndex by remember(initialIndex) { mutableStateOf(initialIndex) }
     val density = LocalDensity.current
@@ -379,12 +414,40 @@ private fun PhotoViewer(
             )
         }
 
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+        // ── Barre d'actions en haut ──────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(Icons.Filled.Close, contentDescription = "Fermer", tint = Color.White,
-                modifier = Modifier.size(32.dp))
+            // Bouton supprimer (haut gauche)
+            IconButton(
+                onClick = { uri?.let { onDeleteRequest(it) } },
+                enabled = !isDeleting && uri != null
+            ) {
+                if (isDeleting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Supprimer la photo",
+                        tint = Color(0xFFFF6B6B),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            // Bouton fermer (haut droite)
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Fermer", tint = Color.White,
+                    modifier = Modifier.size(32.dp))
+            }
         }
 
         if (currentIndex > 0) {

@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import ovh.pandore.photobooth.data.local.PhotoRepository
 import ovh.pandore.photobooth.data.local.PreferencesManager
 import ovh.pandore.photobooth.data.remote.EmailService
 import ovh.pandore.photobooth.data.remote.ImmichService
@@ -34,7 +36,10 @@ data class GalleryUiState(
     val email: String = "",
     val isSubmitting: Boolean = false,
     val showConfirmDialog: Boolean = false,
-    val submitError: String? = null
+    val submitError: String? = null,
+    val showDeleteConfirmDialog: Boolean = false,
+    val deletingPhotoUri: Uri? = null,
+    val isDeleting: Boolean = false
 )
 
 class GalleryViewModel(application: Application) : AndroidViewModel(application) {
@@ -146,6 +151,59 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.update { it.copy(isSubmitting = false) }
                 _toastEvent.emit("Erreur lors de l'envoi : ${result.exceptionOrNull()?.message}")
             }
+        }
+    }
+
+    /**
+     * Demande la suppression d'une photo → affiche la dialog de confirmation.
+     */
+    fun requestDeletePhoto(uri: Uri) {
+        _uiState.update { it.copy(showDeleteConfirmDialog = true, deletingPhotoUri = uri) }
+    }
+
+    /** Ferme la dialog de suppression sans rien faire. */
+    fun dismissDeleteDialog() {
+        _uiState.update { it.copy(showDeleteConfirmDialog = false, deletingPhotoUri = null) }
+    }
+
+    /**
+     * Confirme la suppression : supprime la photo localement (MediaStore) et sur Immich.
+     */
+    fun confirmDeletePhoto() {
+        val uri = _uiState.value.deletingPhotoUri ?: return
+        _uiState.update { it.copy(showDeleteConfirmDialog = false, deletingPhotoUri = null, isDeleting = true) }
+
+        viewModelScope.launch {
+            val photoRepo = PhotoRepository.getInstance(getApplication())
+
+            // 1. Récupérer l'ID Immich associé (peut être null si pas encore uploadé)
+            val record = photoRepo.getRecordByUri(uri.toString())
+            val immichId = record?.immichId
+
+            // 2. Suppression locale via MediaStore
+            val deletedLocally = withContext(Dispatchers.IO) {
+                try {
+                    getApplication<Application>().contentResolver.delete(uri, null, null) > 0
+                } catch (_: Exception) { false }
+            }
+
+            // 3. Suppression sur Immich si un ID est connu
+            if (immichId != null) {
+                val baseUrl = prefs.getImmichBaseUrl()
+                val apiKey  = prefs.getImmichApiKey()
+                if (baseUrl.isNotBlank() && apiKey.isNotBlank()) {
+                    ImmichService(baseUrl, apiKey).deleteAsset(immichId)
+                }
+            }
+
+            // 4. Retrait de la base locale
+            photoRepo.removeRecord(uri.toString())
+
+            // 5. Rechargement de la liste
+            loadPhotos()
+
+            _uiState.update { it.copy(isDeleting = false) }
+            _toastEvent.emit(if (deletedLocally) "Photo supprimée" else "Erreur lors de la suppression locale")
         }
     }
 

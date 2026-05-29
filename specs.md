@@ -92,6 +92,7 @@ Un process background les envoie vers une instance Immich, dans un album dédié
     6. URL construite : `{baseUrl}/share/{key}`.
 * **Visionneuse plein-écran** : clic sur une vignette → overlay fond noir avec :
   * Croix de fermeture (haut droite), boutons `<` / `>` sur les bords, compteur `n / total` (bas centre).
+  * **Icône de suppression** (poubelle rouge, haut gauche) : affiche une `AlertDialog` de confirmation ("Supprimer la photo ?", boutons "Supprimer"/"Annuler"). Confirmation → suppression de la photo **localement** (MediaStore `contentResolver.delete`) et **sur Immich** (DELETE `/api/assets` avec l'ID Immich récupéré depuis `PhotoRepository`). Si la photo n'a pas encore été uploadée (pas d'`immichId`), seule la suppression locale est effectuée. Un spinner remplace l'icône pendant la suppression. Un Toast confirme le résultat. La liste est rechargée automatiquement après suppression ; si la photo supprimée était la dernière, la visionneuse se ferme.
   * Swipe horizontal (seuil 80 dp) pour naviguer entre photos. `BackHandler` ferme la visionneuse avant de quitter la galerie.
 * **Grille de photos** : `LazyVerticalGrid` (colonne adaptive, min 150 dp), photos de `Pictures/Photobooth` via MediaStore, triées par date décroissante. Rechargée à chaque entrée dans la vue.
 
@@ -104,7 +105,7 @@ Un process background les envoie vers une instance Immich, dans un album dédié
 ## Base de données locale des photos
 * Classe `PhotoRecord` : `localUri` (String), `immichId` (String?), `capturedAt` (Long).
 * Classe `PhotoRepository` : singleton, accès thread-safe via `Mutex`, sérialisation JSON via Gson dans `filesDir/photo_records.json`.
-* Méthodes : `getAllRecords()`, `addRecord(record)`, `updateImmichId(localUri, immichId)`.
+* Méthodes : `getAllRecords()`, `addRecord(record)`, `updateImmichId(localUri, immichId)`, `getRecordByUri(localUri)`, `removeRecord(localUri)`.
 * `MainViewModel` enregistre chaque nouvelle photo via `addRecord()` avant l'upload.
 * `PhotoUploadWorker` appelle `updateImmichId()` après upload réussi au lieu de supprimer le fichier.
 

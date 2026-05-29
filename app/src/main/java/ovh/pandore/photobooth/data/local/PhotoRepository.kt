@@ -58,6 +58,20 @@ class PhotoRepository private constructor(context: Context) {
         }
     }
 
+    /** Retourne le record associé à l'URI locale, ou null si non trouvé. */
+    suspend fun getRecordByUri(localUri: String): PhotoRecord? = withContext(Dispatchers.IO) {
+        mutex.withLock { readFromFile().firstOrNull { it.localUri == localUri } }
+    }
+
+    /** Supprime le record associé à l'URI locale. */
+    suspend fun removeRecord(localUri: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val records = readFromFile().toMutableList()
+            records.removeIf { it.localUri == localUri }
+            writeToFile(records)
+        }
+    }
+
     private fun readFromFile(): List<PhotoRecord> {
         if (!file.exists()) return emptyList()
         return try {

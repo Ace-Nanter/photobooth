@@ -169,6 +169,28 @@ class ImmichService(
     fun buildShareUrl(linkKey: String): String = "$normalizedBase/share/$linkKey"
 
     /**
+     * Supprime un asset Immich par son ID.
+     * DELETE /api/assets
+     * @return true si la suppression a réussi.
+     */
+    suspend fun deleteAsset(assetId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val body = gson.toJson(mapOf("ids" to listOf(assetId)))
+                .toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("$normalizedBase/api/assets")
+                .header("x-api-key", apiKey)
+                .delete(body)
+                .build()
+            NetworkClient.immichClient.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
      * Ajoute un asset à un album.
      * @return true si l'ajout a réussi.
      */
