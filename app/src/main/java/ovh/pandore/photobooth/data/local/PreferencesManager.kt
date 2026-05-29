@@ -23,9 +23,11 @@ class PreferencesManager(private val context: Context) {
         private val IMMICH_ALBUM_LINK = stringPreferencesKey("immich_album_link")
         private val PIN_CODE = stringPreferencesKey("pin_code")
         private val PHOTO_PREVIEW_DURATION = intPreferencesKey("photo_preview_duration_seconds")
+        private val COUNTDOWN_DURATION = intPreferencesKey("countdown_duration_seconds")
 
         const val DEFAULT_PIN = "1234"
         const val DEFAULT_PREVIEW_DURATION_SECONDS = 5
+        const val DEFAULT_COUNTDOWN_DURATION_SECONDS = 5
     }
 
     // --- Flows ---
@@ -51,6 +53,9 @@ class PreferencesManager(private val context: Context) {
     val photoPreviewDurationFlow: Flow<Int> = context.dataStore.data
         .map { it[PHOTO_PREVIEW_DURATION] ?: DEFAULT_PREVIEW_DURATION_SECONDS }
 
+    val countdownDurationFlow: Flow<Int> = context.dataStore.data
+        .map { it[COUNTDOWN_DURATION] ?: DEFAULT_COUNTDOWN_DURATION_SECONDS }
+
     // --- Lectures suspendues (one-shot) ---
 
     suspend fun getWebcamBaseUrl(): String = webcamBaseUrlFlow.first()
@@ -60,6 +65,7 @@ class PreferencesManager(private val context: Context) {
     suspend fun getImmichAlbumLink(): String = immichAlbumLinkFlow.first()
     suspend fun getPinCode(): String = pinCodeFlow.first()
     suspend fun getPhotoPreviewDuration(): Int = photoPreviewDurationFlow.first()
+    suspend fun getCountdownDuration(): Int = countdownDurationFlow.first()
     suspend fun hasValidWebcamConfig(): Boolean = getWebcamBaseUrl().isNotBlank()
 
     // --- Écritures ---
@@ -84,5 +90,8 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun savePhotoPreviewDuration(seconds: Int) =
         context.dataStore.edit { it[PHOTO_PREVIEW_DURATION] = seconds.coerceIn(2, 15) }
+
+    suspend fun saveCountdownDuration(seconds: Int) =
+        context.dataStore.edit { it[COUNTDOWN_DURATION] = seconds.coerceIn(2, 20) }
 }
 

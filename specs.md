@@ -44,15 +44,25 @@ Un process background les envoie vers une instance Immich, dans un album dédié
   * **Screen Pinning Android** activé automatiquement à l'arrivée sur cette page (l'utilisateur confirme une seule fois ; home et recents sont ensuite bloqués).
   * Le mode kiosque est **désactivé** dès que l'application revient à la page de lancement (reprise, icônisation, etc.) : la navigation système redevient normale sur la page de lancement.
 * **Diaporama de photos** en haut à droite (~140 dp) : remplace l'ancien QR code. Affiche les photos prises dans `Pictures/Photobooth`, extraites via MediaStore. Les photos défilent avec un fondu enchaîné automatique toutes les 3 secondes. Un clic sur le diaporama navigue directement vers la **vue Galerie** (sans PIN). Les photos sont mises à jour à chaque capture et au démarrage.
-* **Bouton de prise de vue** (centré en bas) → au clic, un **son de déclencheur** (`res/raw/photo.mp3`) est joué instantanément via `SoundPool`, puis l'appel `GET /photoaf.jpg` est exécuté en background ; la photo est sauvegardée dans `Pictures/Photobooth` puis mise en file d'upload. Après la capture, une **vignette animée** de la photo s'affiche :
+* **Bouton de prise de vue** (centré en bas) → au clic, un **compte à rebours** s'affiche en grand par-dessus le flux vidéo (voir ci-dessous), puis l'appel `GET /photoaf.jpg` est exécuté en background ; la photo est sauvegardée dans `Pictures/Photobooth` puis mise en file d'upload. Après la capture, une **vignette animée** de la photo s'affiche :
   * Apparition depuis le centre en zoom-in avec animation spring (rebond léger, `DampingRatioMediumBouncy`), accompagnée d'un fondu du fond assombri.
   * La photo occupe environ **70 % de la largeur de l'écran**, avec un ratio d'aspect réel, une **bordure blanche de 6 dp** et des coins arrondis.
   * La vignette reste affichée pendant la durée configurée dans les réglages (défaut 5 s), puis disparaît en zoom-out + fondu. La durée est observée en temps réel depuis le DataStore via un Flow : toute modification dans les réglages est immédiatement prise en compte sans nécessiter un redémarrage ou un retour de navigation.
   * **En dessous de la photo**, un bouton **"Récupérer les photos"** permet de naviguer directement vers la vue Galerie (dismiss overlay + navigation). La vignette se ferme automatiquement si l'utilisateur n'agit pas.
   * Aucune popup / snackbar n'est affichée en plus de cette vignette.
   * **Pendant l'affichage de la vignette**, les boutons de prise de vue et de flash sont désactivés.
+* **Compte à rebours avant capture** :
+  * Overlay plein-écran semi-transparent (fond noir à 60 % d'opacité) apparaissant immédiatement au clic sur le bouton caméra.
+  * Affiche un grand chiffre dégressif (police ExtraBold, ~280 sp) animé avec effet zoom-in + slide vertical à chaque changement de secondes.
+  * Couleur blanche tout au long du décompte. Ombre portée renforcée pour lisibilité.
+  * Chaque changement de chiffre déclenche une pulsation (scale 1.4 → 1.0 en 350 ms).
+  * Le décompte s'arrête à 1 (pas d'affichage de 0, pas d'emoji). La vignette photo et le son de déclencheur apparaissent directement à la fin.
+  * Fond légèrement assombri (opacité 30 %) pour conserver la visibilité de la vidéo.
+  * Durée configurable dans les réglages (voir slider "Durée du minuteur").
+  * Le compte à rebours est annulé automatiquement si une dialog PIN s'affiche (bouton retour, accès réglages).
+  * **Pendant le compte à rebours**, les boutons de prise de vue et de flash sont désactivés.
 * **Bouton Flash** (à gauche du bouton de prise de vue) → bascule sur/hors du flash (torche) via `POST /enabletorch` / `POST /disabletorch`. L'icône indique l'état actuel (éclair jaune = actif, grisé = inactif).
-* **Désactivation des boutons d'action** : les boutons de prise de vue et de flash sont désactivés (`enabled = false`) dans les cas suivants : vignette d'aperçu visible, dialog PIN réglages affichée, dialog PIN de sortie affichée.
+* **Désactivation des boutons d'action** : les boutons de prise de vue et de flash sont désactivés (`enabled = false`) dans les cas suivants : vignette d'aperçu visible, compte à rebours en cours, dialog PIN réglages affichée, dialog PIN de sortie affichée.
 * Bouton "roue crantée" **en haut à gauche** pour accéder aux réglages. L'appui sur ce bouton demande un code PIN.
 * Si le code est correct alors la navigation se fait vers la page des réglages.
 * **Positionnement du bouton réglages** : utilise `BoxWithConstraints` pour calculer dynamiquement la bande letterbox entre la vidéo 720p (16:9) et les bords de l'écran. Sur la tablette cible SM-T590 (résolution 1920×1200, ~213 DPI, soit ~1443×902 dp en paysage), la vidéo 16:9 laisse une bande letterbox d'environ 45 dp en haut et en bas. Le bouton réglages est centré verticalement dans cette bande, hors de la zone vidéo.
@@ -114,6 +124,7 @@ Un process background les envoie vers une instance Immich, dans un album dédié
 * Champ input pour l'URL du serveur Immich et la clé API.
 * Champ input pour modifier le code PIN (confirmation requise).
 * **Slider "Durée d'affichage de la vignette"** : plage 2-15 secondes (défaut 5 s). La valeur est sauvegardée immédiatement au relâchement du slider.
+* **Slider "Durée du minuteur avant capture"** : plage 2-20 secondes (défaut 5 s). La valeur est sauvegardée immédiatement au relâchement du slider. Observée en temps réel via un Flow dans `MainViewModel`.
 * Choix de l'album Immich : récupération de la liste via appel API, puis sauvegarde de l'ID choisi.
 * Une fois l'album sélectionné dans les réglages, la vue Galerie résout dynamiquement le lien de partage via l'API Immich (GET + POST `/api/shared-links`) — plus de lien statique stocké.
 * Bouton pour quitter l'application : icône `ExitToApp` (rouge) placée dans la `TopAppBar` en haut à droite, accessible immédiatement sans scroller. Au clic : désactive le screen pinning (`stopLockTask`) puis ferme l'app (`finishAndRemoveTask`).

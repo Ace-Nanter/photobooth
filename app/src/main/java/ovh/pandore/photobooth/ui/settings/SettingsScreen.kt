@@ -186,6 +186,10 @@ fun SettingsScreen(
                 durationSeconds = uiState.photoPreviewDuration,
                 onDurationChange = viewModel::onPhotoPreviewDurationChange
             )
+            CountdownDurationSlider(
+                durationSeconds = uiState.countdownDuration,
+                onDurationChange = viewModel::onCountdownDurationChange
+            )
             HorizontalDivider()
             SectionTitle("Code PIN")
             Text(
@@ -265,6 +269,47 @@ private fun PhotoPreviewDurationSlider(
             Text("2s", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("15s", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun CountdownDurationSlider(
+    durationSeconds: Int,
+    onDurationChange: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Durée du minuteur avant capture",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "${durationSeconds}s",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = durationSeconds.toFloat(),
+            onValueChange = { onDurationChange(it.toInt()) },
+            valueRange = 2f..20f,
+            steps = 17,   // 2,3,...,20 → 19 valeurs → 18 pas
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("2s", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("20s", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

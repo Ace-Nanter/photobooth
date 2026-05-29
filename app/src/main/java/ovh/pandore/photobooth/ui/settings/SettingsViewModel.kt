@@ -25,7 +25,9 @@ data class SettingsUiState(
     val saveSuccess: Boolean = false,
     val saveError: String? = null,
     /** Durée d'affichage de la vignette photo après capture, en secondes (2-15). */
-    val photoPreviewDuration: Int = PreferencesManager.DEFAULT_PREVIEW_DURATION_SECONDS
+    val photoPreviewDuration: Int = PreferencesManager.DEFAULT_PREVIEW_DURATION_SECONDS,
+    /** Durée du minuteur avant la prise de photo, en secondes (2-20). */
+    val countdownDuration: Int = PreferencesManager.DEFAULT_COUNTDOWN_DURATION_SECONDS
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -46,7 +48,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     immichBaseUrl = prefs.getImmichBaseUrl(),
                     immichApiKey = prefs.getImmichApiKey(),
                     immichAlbumId = prefs.getImmichAlbumId(),
-                    photoPreviewDuration = prefs.getPhotoPreviewDuration()
+                    photoPreviewDuration = prefs.getPhotoPreviewDuration(),
+                    countdownDuration = prefs.getCountdownDuration()
                 )
             }
         }
@@ -136,6 +139,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun onPhotoPreviewDurationChange(seconds: Int) {
         _uiState.update { it.copy(photoPreviewDuration = seconds) }
         viewModelScope.launch { prefs.savePhotoPreviewDuration(seconds) }
+    }
+
+    /** Met à jour et sauvegarde immédiatement la durée du minuteur (slider). */
+    fun onCountdownDurationChange(seconds: Int) {
+        _uiState.update { it.copy(countdownDuration = seconds) }
+        viewModelScope.launch { prefs.saveCountdownDuration(seconds) }
     }
 }
 

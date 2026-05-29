@@ -10,13 +10,17 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -71,14 +75,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -169,6 +176,7 @@ fun MainScreen(
         val buttonsDisabled = uiState.capturedPhotoBytes != null
                 || uiState.showPinDialog
                 || uiState.showExitPinDialog
+                || uiState.isCountingDown
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -198,9 +206,8 @@ fun MainScreen(
 
             FilledIconButton(
                 onClick = {
-                    if (!uiState.isCapturing) {
-                        soundPool.play(shutterSoundId, 1f, 1f, 0, 0, 1f)
-                        viewModel.capturePhoto()
+                    if (!uiState.isCapturing && !uiState.isCountingDown) {
+                        viewModel.startCountdown()
                     }
                 },
                 enabled = !buttonsDisabled,
@@ -252,6 +259,16 @@ fun MainScreen(
                 )
             }
         }
+
+        CountdownOverlay(
+            isVisible = uiState.isCountingDown,
+            durationSeconds = uiState.countdownDurationSeconds,
+            onCaptureTrigger = {
+                soundPool.play(shutterSoundId, 1f, 1f, 0, 0, 1f)
+                viewModel.capturePhoto()
+            },
+            onDone = viewModel::stopCountdown
+        )
 
         CapturedPhotoOverlay(
             photoBytes = uiState.capturedPhotoBytes,
@@ -400,6 +417,114 @@ internal fun loadThumbnailBitmap(
         }
     } catch (_: Exception) {
         null
+    }
+}
+
+// ── Overlay compte à rebours ────────────────────────────────────────────────────
+
+/**
+ * Décalage en ms appliqué avant la fin du compte à rebours pour compenser
+ * la latence de l'appel HTTP de capture.
+ */
+private const val CAPTURE_LATENCY_OFFSET_MS = 400L
+
+/**
+ * Overlay plein-écran affichant un compte à rebours animé avant la prise de vue.
+ * [onCaptureTrigger] est appelé [CAPTURE_LATENCY_OFFSET_MS] ms avant la fin
+ * pour compenser la latence réseau. [onDone] est appelé à la fin du décompte.
+ */
+@Composable
+private fun CountdownOverlay(
+    isVisible: Boolean,
+    durationSeconds: Int,
+    onCaptureTrigger: () -> Unit,
+    onDone: () -> Unit
+) {
+    // Chiffre affiché en cours (0 = décompte terminé, on affiche rien)
+    var currentSecond by remember(isVisible, durationSeconds) { mutableIntStateOf(durationSeconds) }
+
+    // Animation de pulsation sur chaque changement de chiffre
+    val pulseScale = remember { Animatable(1f) }
+
+    // Timer principal — annulé automatiquement si isVisible passe à false
+    LaunchedEffect(isVisible, durationSeconds) {
+        if (!isVisible) return@LaunchedEffect
+        val totalMs = durationSeconds * 1_000L
+        val captureMs = (totalMs - CAPTURE_LATENCY_OFFSET_MS).coerceAtLeast(0L)
+        var elapsed = 0L
+        var captured = false
+        val tickMs = 50L
+
+        while (elapsed < totalMs) {
+            delay(tickMs)
+            elapsed += tickMs
+            val remaining = (totalMs - elapsed).coerceAtLeast(0L)
+            val newSecond = kotlin.math.ceil(remaining / 1_000.0).toInt().coerceAtLeast(1)
+            if (newSecond != currentSecond) {
+                currentSecond = newSecond
+                // Pulsation à chaque changement de chiffre
+                pulseScale.snapTo(1.4f)
+                pulseScale.animateTo(1f, animationSpec = tween(350))
+            }
+            if (!captured && elapsed >= captureMs) {
+                onCaptureTrigger()
+                captured = true
+            }
+        }
+        onDone()
+    }
+
+    // Fond légèrement assombri pour lisibilité sans masquer la vidéo
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(tween(200)),
+        exit  = fadeOut(tween(300))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.30f))
+        )
+    }
+
+    // Chiffre central animé
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(tween(150)),
+        exit  = fadeOut(tween(250)),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            AnimatedContent(
+                targetState = currentSecond,
+                transitionSpec = {
+                    (slideInVertically(tween(300)) { -it / 2 } +
+                     scaleIn(initialScale = 1.8f, animationSpec = tween(300)) +
+                     fadeIn(tween(200))) togetherWith
+                    (slideOutVertically(tween(250)) { it / 2 } +
+                     scaleOut(targetScale = 0.4f, animationSpec = tween(250)) +
+                     fadeOut(tween(200)))
+                },
+                label = "countdown_number"
+            ) { second ->
+                Text(
+                    text = second.toString(),
+                    fontSize = 280.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    modifier = Modifier.scale(pulseScale.value),
+                    style = androidx.compose.ui.text.TextStyle(
+                        shadow = androidx.compose.ui.graphics.Shadow(
+                            color = Color.Black.copy(alpha = 0.8f),
+                            blurRadius = 32f
+                        )
+                    )
+                )
+            }
+        }
     }
 }
 

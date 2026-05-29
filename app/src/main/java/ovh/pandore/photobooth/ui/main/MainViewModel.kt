@@ -42,6 +42,10 @@ data class MainUiState(
     val reconnectKey: Int = 0,
     val flashEnabled: Boolean = false,
     val photoPreviewDurationMs: Long = 5_000L,
+    /** Durée du minuteur avant capture, en secondes. */
+    val countdownDurationSeconds: Int = 5,
+    /** Indique si le compte à rebours est en cours. */
+    val isCountingDown: Boolean = false,
     /** Liste des URIs de photos recentes pour le diaporama (haut-droite). */
     val recentPhotoUris: List<Uri> = emptyList()
 )
@@ -57,6 +61,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         loadConfig()
         observePreviewDuration()
+        observeCountdownDuration()
         loadRecentPhotos()
     }
 
@@ -81,6 +86,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun observeCountdownDuration() {
+        viewModelScope.launch {
+            prefs.countdownDurationFlow.collect { seconds ->
+                _uiState.update { it.copy(countdownDurationSeconds = seconds) }
+            }
+        }
+    }
+
     fun refreshAlbumLink() {
         viewModelScope.launch {
             val albumLink = prefs.getImmichAlbumLink()
@@ -94,6 +107,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val uris = queryPhotosFromMediaStore()
             _uiState.update { it.copy(recentPhotoUris = uris) }
         }
+    }
+
+    // --- Countdown ---
+
+    /** Démarre le compte à rebours (avant la capture). */
+    fun startCountdown() {
+        _uiState.update { it.copy(isCountingDown = true) }
+    }
+
+    /** Arrête le compte à rebours (annulation ou fin naturelle). */
+    fun stopCountdown() {
+        _uiState.update { it.copy(isCountingDown = false) }
     }
 
     // --- Capture photo ---
@@ -155,7 +180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- PIN ---
 
     fun showPinDialog() {
-        _uiState.update { it.copy(showPinDialog = true, pinError = false) }
+        _uiState.update { it.copy(showPinDialog = true, pinError = false, isCountingDown = false) }
     }
 
     fun dismissPinDialog() {
@@ -175,7 +200,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun showExitPinDialog() {
-        _uiState.update { it.copy(showExitPinDialog = true, exitPinError = false) }
+        _uiState.update { it.copy(showExitPinDialog = true, exitPinError = false, isCountingDown = false) }
     }
 
     fun dismissExitPinDialog() {
