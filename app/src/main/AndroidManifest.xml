@@ -3,6 +3,9 @@
           xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lecture de l'IP locale pour le scan réseau automatique -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Écriture dans Pictures/ sur Android < 10 (API 28 et antérieur) -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"

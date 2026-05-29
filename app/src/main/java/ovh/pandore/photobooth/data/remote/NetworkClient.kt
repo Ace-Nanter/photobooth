@@ -26,5 +26,14 @@ object NetworkClient {
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * Client dédié au scan réseau : timeouts très courts pour ne pas bloquer le balayage
+     * des 254 adresses du sous-réseau local.
+     */
+    val scanClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(500, TimeUnit.MILLISECONDS)
+        .readTimeout(500, TimeUnit.MILLISECONDS)
+        .build()
 }
 

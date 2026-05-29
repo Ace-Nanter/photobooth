@@ -10,26 +10,63 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ovh.pandore.photobooth.data.local.PreferencesManager
 import ovh.pandore.photobooth.data.remote.IpWebCamService
+import ovh.pandore.photobooth.data.remote.NetworkScanner
 
 data class LaunchUiState(
     val webcamUrl: String = "",
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    /** true pendant le scan réseau automatique */
+    val isScanning: Boolean = false,
+    /** Message de résultat du scan (succès ou échec) */
+    val scanMessage: String? = null
 )
 
 class LaunchViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = PreferencesManager(application)
+    private val networkScanner = NetworkScanner(application)
 
     private val _uiState = MutableStateFlow(LaunchUiState())
     val uiState: StateFlow<LaunchUiState> = _uiState.asStateFlow()
 
     init {
-        // Pré-remplit avec la dernière adresse utilisée
         viewModelScope.launch {
+            // Pré-remplit avec la dernière adresse utilisée en attendant le scan
             val savedUrl = prefs.getWebcamBaseUrl()
             if (savedUrl.isNotBlank()) {
                 _uiState.update { it.copy(webcamUrl = savedUrl) }
+            }
+            // Lance le scan réseau automatique dès l'arrivée sur l'écran
+            startNetworkScan()
+        }
+    }
+
+    /**
+     * Scanne le sous-réseau local pour détecter automatiquement le serveur IP WebCam
+     * (GET http://<ip>:8080/videostatus). Met à jour le champ URL si un serveur est trouvé.
+     */
+    fun startNetworkScan() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isScanning = true, scanMessage = null) }
+
+            val foundUrl = networkScanner.findVideoServer()
+
+            if (foundUrl != null) {
+                _uiState.update {
+                    it.copy(
+                        webcamUrl = foundUrl,
+                        isScanning = false,
+                        scanMessage = "Serveur détecté automatiquement ✓"
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isScanning = false,
+                        scanMessage = "Aucun serveur détecté. Entrez l'adresse manuellement."
+                    )
+                }
             }
         }
     }
@@ -88,4 +125,3 @@ class LaunchViewModel(application: Application) : AndroidViewModel(application) 
             Regex("""^http://(\d{1,3}\.){3}\d{1,3}:\d{2,5}$""")
     }
 }
-

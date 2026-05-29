@@ -14,6 +14,14 @@ Un process background les envoie vers une instance Immich, dans un album dédié
 * La page de lancement s'affiche **à chaque démarrage ou reprise de l'application** (retour depuis le gestionnaire de tâches, déverrouillage, etc.).
 * Il faut mettre l'adresse IP du téléphone pour avoir un BASE\_URL valable à travers le runtime de l'application.
 * Le champ est pré-rempli avec la dernière adresse utilisée pour éviter de la ressaisir.
+* **Détection automatique du serveur** : dès l'arrivée sur cet écran, l'application scanne automatiquement le sous-réseau local Wi-Fi (/24) pour identifier le serveur IP WebCam :
+  * La classe `NetworkScanner` récupère l'adresse IP locale via `WifiManager` pour déduire le préfixe /24.
+  * 254 requêtes HTTP sont lancées **en parallèle** (coroutines `Dispatchers.IO`) sur `http://<ip>:8080/videostatus`, avec un timeout de 500 ms.
+  * Dès la première réponse 2xx reçue, le scope est annulé et l'URL `http://<ip>:8080` est **auto-complétée** dans le champ de saisie.
+  * Un `LinearProgressIndicator` indique la recherche en cours. Un message contextuel indique si un serveur a été trouvé (en vert) ou non.
+  * Un bouton **Actualiser** (icône ↺) permet de relancer le scan manuellement.
+  * Un client OkHttp dédié `NetworkClient.scanClient` (connect + read timeout 500 ms) est utilisé pour ne pas bloquer les autres clients applicatifs.
+  * Permissions ajoutées dans `AndroidManifest.xml` : `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE`.
 * Un bouton launch valide le formulaire qui récupère l'IP du téléphone et si l'URL peut être jointe et qu'un flux vidéo peut être récupéré, alors :
   1. La connexion est validée via `GET /photoaf.jpg`.
   2. Les réglages caméra sont configurés :
